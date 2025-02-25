@@ -1,0 +1,109 @@
+#######################################################################
+#June 2024
+#Concatenating EDTA files for final paper datastores
+#######################################################################
+#MSCE version of Oxyria digyna, 
+
+
+output_file="Oxyria.fasta.mod.EDTA.TEanno.gff3"
+for i in {1..8}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.gff3" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+
+#scaffold_*.fasta.mod.EDTA.TEanno.sum
+output_file="Oxyria.fasta.mod.EDTA.TEanno.sum"
+for i in {1..8}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.sum" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+#scaffold_*.fasta.mod.EDTA.TElib.fa
+output_file="Oxyria.fasta.mod.EDTA.TElib.fa"
+for i in {1..8}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TElib.fa" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+#######################################################################
+#Fagopyrum tataricum
+
+output_file="F_tataricum.fasta.mod.EDTA.TEanno.gff3"
+for i in {1..9}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.gff3" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+
+#scaffold_*.fasta.mod.EDTA.TEanno.sum
+output_file="F_tataricum.fasta.mod.EDTA.TEanno.sum"
+for i in {1..9}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.sum" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+#scaffold_*.fasta.mod.EDTA.TElib.fa
+output_file="F_tataricum.fasta.mod.EDTA.TElib.fa"
+for i in {1..9}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TElib.fa" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+
+#######################################################################
+#Polygonum aviculare
+output_file="P_aviculare.fasta.mod.EDTA.TEanno.gff3"
+for i in {1..11}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.gff3" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+
+#scaffold_*.fasta.mod.EDTA.TEanno.sum
+output_file="P_aviculare.fasta.mod.EDTA.TEanno.sum"
+for i in {1..11}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.sum" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+#scaffold_*.fasta.mod.EDTA.TElib.fa
+output_file="P_aviculare.fasta.mod.EDTA.TElib.fa"
+for i in {1..11}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TElib.fa" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+
+output_file="Oxyria_NCBI.fasta.mod.EDTA.TEanno.gff3"
+for i in {1..8}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.gff3" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+#######################################################################
+#NCBI copy of Oxyria
+#scaffold_*.fasta.mod.EDTA.TEanno.sum
+output_file="Oxyria_NCBI.fasta.mod.EDTA.TEanno.sum"
+for i in {1..8}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TEanno.sum" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done
+
+#scaffold_*.fasta.mod.EDTA.TElib.fa
+output_file="Oxyria_NCBI.fasta.mod.EDTA.TElib.fa"
+for i in {1..8}
+do
+    cat "scaffold_${i}.fasta.mod.EDTA.TElib.fa" >> "$output_file"
+    echo "" >> "$output_file"  # Add a newline between files
+done

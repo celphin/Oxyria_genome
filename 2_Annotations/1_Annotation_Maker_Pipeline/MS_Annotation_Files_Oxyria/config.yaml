@@ -1,0 +1,20 @@
+cluster: "~/.config/snakemake/cc-slurm/slurm-submit.py {dependencies}"
+#cluster-status: "~/.config/snakemake/cc-slurm/slurm-status.py"  #not fully tested yet.. better to rely on filesystem checks..
+jobscript: "slurm-jobscript.sh"
+jobs: 500
+verbose: False
+use-singularity: True
+use-envmodules: True
+singularity-args: ' -e '
+immediate-submit: True
+notemp: True #notemp set to the value of immediate_submit (since both have to be true together)
+max-jobs-per-second: 2
+#max-status-checks-per-second: 0.2
+restart-times: 3
+default-resources: "mem_mb=12000" #this is for ensuring grouped-jobs have enough memory (ie. sum of memory request)
+local-cores: 1
+singularity-prefix: 'singularity'
+#notebook-listen: '$(hostname -f):8888'
+rerun-incomplete: True
+keep-going: True
+show-failed-logs: True

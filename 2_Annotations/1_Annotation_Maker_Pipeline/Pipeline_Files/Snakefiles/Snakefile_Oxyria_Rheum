@@ -1,0 +1,596 @@
+#--------------------------------------------------------------------------------
+# MAIN CONFIGURATION PARAMETERS (INTERNAL CONFIG FILE)
+#Cancel all jobs if fail: squeue -u $USER -h | awk '{print $1}' | xargs scancel
+#--------------------------------------------------------------------------------
+
+# Sample specifics
+CHRS = '1 2 3 4 5 6 7 8'.split()
+PROJECT = "Oxyria"
+REFERENCE = "Oxyria.fasta"
+NANOPORE_FASTQ = "Nanopore.fastq"
+AED_FILTER = '0.6 1'.split()
+
+#--------------------------------------------------------------------------------
+# TargetRule FINAL_GFF3
+#--------------------------------------------------------------------------------
+
+rule FINAL_GFF3:
+	input:
+		expand("{Main_Reference}",Main_Reference=REFERENCE),
+		expand("{Project}/Maker_Files/Rheum_tanguticum_Proteins.fa",Project=PROJECT),
+		expand("{Project}/Maker_Files/PK_Repeat_contigs_RE_filtered_min500bp.fa",Project=PROJECT),
+		expand("{Project}/Ref/scaffold_{Chrs}.fasta",Project=PROJECT,Chrs = CHRS),
+		expand("{Project}/EDTA_Files/scaffold_{Chrs}.fasta.mod.EDTA.TEanno.gff3",Project=PROJECT,Chrs = CHRS),
+		expand("{Project}/EDTA_Files/scaffold_{Chrs}.fasta.mod.EDTA.TElib.fa",Project=PROJECT,Chrs = CHRS),
+		expand("{Project}/EDTA_Files/{Project}_chr{Chrs}.masked.fasta",Project=PROJECT,Chrs = CHRS),
+#		expand("{Project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam",Project=PROJECT),
+#		expand("{Project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam.bai",Project=PROJECT),
+#		expand("{Project}/Sorted_Chromosomes/Nanopore.chr{Chrs}.fasta",Project=PROJECT,Chrs = CHRS),
+#		expand("{Project}/Sorted_Chromosomes/Minor_Scaffolds.fasta",Project=PROJECT),
+		expand("{Project}/Maker_Files/Chr{Chrs}/scaffold_{Chrs}.maker.output/scaffold_{Chrs}_master_datastore_index.log",Project=PROJECT,Chrs = CHRS),
+		expand("{Project}/Maker_Files/Chr{Chrs}/scaffold_{Chrs}.maker.output/scaffold_{Chrs}.all.gff",Project=PROJECT,Chrs = CHRS),
+		expand("{Project}/Maker_Files/Chr{Chrs}/MAKER_Filtered.scaffold_{Chrs}.all.AED_{AED_filter}.gff3",Project=PROJECT,Chrs = CHRS,AED_filter=AED_FILTER),
+		expand("{Project}/Post_Maker_Files/MAKER_ORF_Filtered_{Project}.scaffold_{Chrs}.AED_{AED_filter}.gff3",Project=PROJECT,Chrs = CHRS,AED_filter=AED_FILTER),
+		expand("{Project}/FINAL_ANNOTATION/FINAL_{Project}.AED_{AED_filter}.sorted.gff3",Project=PROJECT,AED_filter=AED_FILTER),
+		expand("{Project}/Summary_data/JML.{Project}.AED_{AED_filter}_GFF3_summary.txt",Project=PROJECT,AED_filter=AED_FILTER),
+		expand("{Project}/Summary_data/{Project}.AED_{AED_filter}_protein.fasta",Project=PROJECT,AED_filter=AED_FILTER),
+#		expand("{Project}/Summary_data/{Project}.AED_{AED_filter}_busco/short_summary.specific.eudicots_odb10.{Project}.AED_{AED_filter}_busco.txt",Project=PROJECT,AED_filter=AED_FILTER),
+	#	expand("{Project}/INTERPRO/{Project}.AED_{AED_filter}_protein.interpro.fasta.tsv",Project=PROJECT,AED_filter=AED_FILTER),
+	#	expand("{Project}/FINAL_ANNOTATION/FINAL_{Project}.AED_{AED_filter}.sorted.interpro.gff3",Project=PROJECT,AED_filter=AED_FILTER),
+
+
+	params:
+		project=PROJECT,
+	shell:
+		"""
+		echo Pipeline Finished correctly for {params.project}..... CONGRATS!!! > {params.project}.Pipeline_complete.txt
+		mv *.err {params.project}/logs
+		mv *.out {params.project}/logs
+		date "+DATE: %D%ntime: %T" >> {params.project}.Pipeline_complete.txt
+		cp -v {params.project}/FINAL_ANNOTATION/FINAL_{params.project}_v1_2.sorted.flagged.gff3 {params.project}/{params.project}.Rieseberg.v1_2.gff3
+		echo final annotation file located at: {params.project}/{params.project}.Rieseberg.v1_2.gff3 >> {params.project}.Pipeline_complete.txt
+		echo Pipeline Finished correctly for {params.project}..... CONGRATS!!!
+		"""	
+
+#--------------------------------------------------------------------------------
+# Init: Initializing files and folder
+#--------------------------------------------------------------------------------
+rule Init:
+	input:
+		reference=REFERENCE,
+		maker_files="Maker_Files_Polygon.zip",
+		Assembly_spliter="Assembly_Chr_splitter.R",
+	output:
+		Main_fasta=expand("{Project}/Ref/{Project}_Main.fasta",Project=PROJECT),
+		Protein_File=expand("{Project}/Maker_Files/Rheum_tanguticum_Proteins.fa",Project=PROJECT),
+		Repeats_File=expand("{Project}/Maker_Files/PK_Repeat_contigs_RE_filtered_min500bp.fa", Project=PROJECT),
+	params:
+		project=PROJECT,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		echo $PWD
+		mkdir -p {params.project}
+		mkdir -p {params.project}/Ref
+		module load StdEnv/2020 intel/2020.1.217 metagenome-atlas/2.5.0
+		#snakemake --dag | dot -Tsvg > {params.project}/dag.svg
+		unzip -o {input.maker_files} -d {params.project}
+
+		mv {params.project}/Maker_Files_Polygon/* {params.project}/Maker_Files
+		cp -v  {input.reference} {output.Main_fasta}
+		#Index FASTA file
+		module load  StdEnv/2020 samtools/1.17
+		samtools faidx {output.Main_fasta} 
+		module unload samtools/1.17
+		cd {params.project}
+		"""
+
+#--------------------------------------------------------------------------------
+# Chr_splitting: Split the Main Assembly in Chromosomes for easy handling
+#--------------------------------------------------------------------------------
+
+rule Chr_splitting:
+	input:
+		rules.Init.output.Main_fasta,
+	output:
+		expand("{Project}/Ref/scaffold_{Chrs}.fasta",Project=PROJECT,Chrs=CHRS),
+	params:
+		project=PROJECT,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		echo Assembly_Chr_splitter_Oxyria.R --args -f {input} 
+		echo Assembly split into Chromosomes
+		module load  StdEnv/2020 r/4.1.0
+		R --vanilla < Assembly_Chr_splitter_Oxyria.R --args -f {input} &&
+		mv Oxy-*.fasta {params.project}/Ref/
+		mv scaffolds.fasta {params.project}/Ref/
+		mv Oxyria/Ref/Oxy-1-*.fasta Oxyria/Ref/scaffold_1.fasta
+		mv Oxyria/Ref/Oxy-2-*.fasta Oxyria/Ref/scaffold_2.fasta
+		mv Oxyria/Ref/Oxy-3-*.fasta Oxyria/Ref/scaffold_3.fasta
+		mv Oxyria/Ref/Oxy-4-*.fasta Oxyria/Ref/scaffold_4.fasta
+		mv Oxyria/Ref/Oxy-5-*.fasta Oxyria/Ref/scaffold_5.fasta
+		mv Oxyria/Ref/Oxy-6-*.fasta Oxyria/Ref/scaffold_6.fasta
+		mv Oxyria/Ref/Oxy-7-*.fasta Oxyria/Ref/scaffold_7.fasta
+		mv Oxyria/Ref/scaffolds.fasta Oxyria/Ref/scaffold_8.fasta
+
+		module unload r/4.1.0
+		"""
+
+
+#--------------------------------------------------------------------------------
+# EDTA_individual: Look for TE elements on individual Fasta Chr
+#--------------------------------------------------------------------------------
+rule EDTA_individual:
+	input:
+		rules.Chr_splitting.output,
+	output:
+		gff3_file="{Project}/EDTA_Files/scaffold_{Chrs}.fasta.mod.EDTA.TEanno.gff3",
+		repeats_file="{Project}/EDTA_Files/scaffold_{Chrs}.fasta.mod.EDTA.TElib.fa",
+	params:
+		project=PROJECT,
+	threads: 48
+	resources:
+		mem_mb=187000, #4GB
+#		time=30
+		time=360 #minutes
+	shell:
+		"""
+		cp {params.project}/Ref/scaffold_{wildcards.Chrs}.fasta {params.project}/EDTA_Files
+		cp -v Name_checker_pre.sh {params.project}/EDTA_Files
+		cp -v Name_checker_post.sh {params.project}/EDTA_Files
+		cd {params.project}/EDTA_Files
+		echo "Name_cheker pre and post correct EDTA bigger than 15 characters name error on FASTA."
+		bash Name_checker_pre.sh scaffold_{wildcards.Chrs}.fasta {params.project}
+
+		set +u
+		#eval "$(conda shell.bash hook)"
+		source ~/miniconda2/bin/activate EDTA
+		set -u
+			echo starting EDTA process on: scaffold_{wildcards.Chrs}.fasta
+			EDTA.pl --overwrite 0 --genome scaffold_{wildcards.Chrs}.fasta --sensitive 0 --anno 1 --evaluate 0 --threads 48 --force 1
+		conda deactivate
+		set +u
+		
+		bash Name_checker_post.sh scaffold_{wildcards.Chrs}.fasta {params.project} scaffold_{wildcards.Chrs}.fasta.mod.EDTA.TEanno.gff3
+		"""
+
+#--------------------------------------------------------------------------------
+# Masked_FASTA: Create masked fasta for further analysis from EDTA results.
+#--------------------------------------------------------------------------------
+#####TURNING OFF MASKING FOR EXPERIMENT
+rule Masked_FASTA:
+	input:
+		EDTA_repeats_file=rules.EDTA_individual.output.gff3_file,
+		reference=rules.Chr_splitting.output,
+	output:
+		masked_fasta_file="{Project}/EDTA_Files/{Project}_chr{Chrs}.masked.fasta",
+	params:
+		project=PROJECT,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		cd {params.project}/EDTA_Files
+		echo "Creating Masked Reference Genome for scaffold_{wildcards.Chrs}.masked.fasta"
+		#module load StdEnv/2020 bedtools/2.30.0
+		#bedtools maskfasta -fi scaffold_{wildcards.Chrs}.fasta -bed scaffold_{wildcards.Chrs}.fasta.mod.EDTA.TEanno.gff3 -fo {params.project}_chr{wildcards.Chrs}.masked.fasta
+		#module unload bedtools/2.30.0
+		#Turning out masking
+		cat scaffold_{wildcards.Chrs}.fasta > {params.project}_chr{wildcards.Chrs}.masked.fasta
+		"""
+
+# #--------------------------------------------------------------------------------
+# # MINIMAP2: Align the Nanopore raw data to CHR bams for further processing.
+# #--------------------------------------------------------------------------------
+
+# rule MINIMAP2:
+	# input:
+		# Nanopore_File=NANOPORE_FASTQ,
+		# reference=rules.Init.output,
+	# output:
+		# Bam_file="{Project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam",
+		# Bai_file="{Project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam.bai",
+	# params:
+		# project=PROJECT,
+		# nanopore_filter=NANOPORE_FILTER,
+	# log:
+		# "{Project}/logs/MINIMAP2.log"
+	# shell:
+		# """
+		# module load StdEnv/2020 samtools/1.17 seqtk/1.3 minimap2/2.24
+		# echo "Minimap will proceed with the alignment."
+		# echo Minimap Indexing
+		# minimap2 -ax map-ont -t 12 -2 {input.reference} {input.Nanopore_File} > {params.project}/Minimap_Aligned/minimap2.sam 
+
+		# echo SAM to BAM convertion
+		# samtools view -S -b {params.project}/Minimap_Aligned/minimap2.sam > {params.project}/Minimap_Aligned/minimap2.bam
+		# echo  BAM sorting
+		# samtools sort {params.project}/Minimap_Aligned/minimap2.bam -o {params.project}/Minimap_Aligned/minimap2.sorted.bam
+		# echo BAM indexing.....
+		# samtools index  {params.project}/Minimap_Aligned/minimap2.sorted.bam
+
+		# echo "Applying MAPQ quality filter of: MAPQ {params.nanopore_filter}"
+# #		samtools view -bq 20 {params.project}/Minimap_Aligned/minimap2.sorted.bam > {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.bam	
+		# samtools view -bq {params.nanopore_filter} {params.project}/Minimap_Aligned/minimap2.sorted.bam > {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.bam
+
+		# echo "Removing duplicates from Bam File"
+		# samtools rmdup -s {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.bam  {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam
+
+		# echo "BAM indexing SORTED QUALITY FILTERED AND DEDUP....."
+		# samtools index  {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam
+		# samtools idxstats {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam > {log}
+
+		# echo "MINIMAP2 STEP HAS FINISHED CORRECTLY"
+		# module unload samtools/1.17 seqtk/1.3 minimap2/2.24
+		# """	
+
+# #--------------------------------------------------------------------------------
+# # Nanopore_Raw_to_Chr: Split the raw Nanopore data into chromosomes for analysis
+# #--------------------------------------------------------------------------------
+
+# rule Nanopore_Raw_to_Chr:
+	# input:
+		# rules.MINIMAP2.output.Bam_file,
+	# output:
+		# "{Project}/Sorted_Chromosomes/Nanopore.chr{Chrs}.fasta",
+	# params:
+		# project=PROJECT,
+	# log:
+		# "{Project}/logs/Sorted_Chromosomes.{Chrs}.log",
+	# shell:
+		# """
+		# module load StdEnv/2020 samtools/1.17 seqtk/1.3
+		# echo Extracting chromosome: {wildcards.Chrs}
+		# samtools view -b {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam {params.project}_Chr{wildcards.Chrs} > {params.project}/Minimap_Aligned/chr{wildcards.Chrs}.bam
+		# samtools index {params.project}/Minimap_Aligned/chr{wildcards.Chrs}.bam
+		
+		# echo Transforming Bam to Fasta
+		# samtools bam2fq {params.project}/Minimap_Aligned/chr{wildcards.Chrs}.bam | seqtk seq -A - > {params.project}/Sorted_Chromosomes/Nanopore.chr{wildcards.Chrs}.fasta 
+		# module unload samtools/1.17 seqtk/1.3
+		# """
+
+#--------------------------------------------------------------------------------
+# Minor_Scaffolds_Correction: Add all the fasta lines to Chr11
+#--------------------------------------------------------------------------------
+
+# rule Minor_Scaffolds_correction:
+	# input:
+		# "{Project}/Sorted_Chromosomes/Nanopore.chr11.fasta",
+	# output:
+		# "{Project}/Sorted_Chromosomes/Minor_Scaffolds.fasta",
+	# params:
+		# project=PROJECT,
+	# log:
+		# "{Project}/logs/Minor_Scaffolds_correction.log",
+	# shell:
+		# """
+		# module load StdEnv/2020 samtools/1.17 seqtk/1.3
+		# samtools idxstats {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam
+		# Contig_Number=$( samtools idxstats {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam | wc -l )
+		# Contig_Number=$((Contig_Number - 1))
+		# echo NUMBER OF CONTIGS: $Contig_Number 2> {log}
+		# for ((i=1; i<=$Contig_Number; i++))
+			# do
+			# samtools view -b {params.project}/Minimap_Aligned/minimap2.sorted.MAPQ20.dedup.bam {params.project}_Contig$i > {params.project}/Minimap_Aligned/Contig$i.bam
+			# samtools index {params.project}/Minimap_Aligned/Contig$i.bam
+			# echo Adding to Chr11 Fasta
+			# samtools bam2fq {params.project}/Minimap_Aligned/Contig$i.bam | seqtk seq -A - >> {params.project}/Sorted_Chromosomes/Nanopore.chr11.fasta
+			# done
+		# cp {params.project}/Sorted_Chromosomes/Nanopore.chr11.fasta {params.project}/Sorted_Chromosomes/Minor_Scaffolds.fasta
+		# module unload samtools/1.17 seqtk/1.3
+		# """				
+
+#--------------------------------------------------------------------------------
+# MAKER3: Perform Maker Analysis, using 3 iterations.
+#--------------------------------------------------------------------------------
+
+rule MAKER3:
+	input:
+		EST_File=rules.Init.output.Protein_File,
+		reference=rules.Chr_splitting.output,
+		Protein_File=rules.Init.output.Protein_File,
+		Repeats_File=rules.EDTA_individual.output.repeats_file,
+	output:
+		"{Project}/Maker_Files/Chr{Chrs}/scaffold_{Chrs}.maker.output/scaffold_{Chrs}_master_datastore_index.log",
+	params:
+		project=PROJECT,
+	threads: 48
+	resources:
+		mem_mb=187000, #4GB
+		time=5600 #minutes
+	shell:
+		"""
+		BASEDIR=$PWD 
+		module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 postgresql/13.2 maker/3.01.03 augustus/3.4.0
+		cd {params.project}/Maker_Files
+		echo Creating Maker Files Chr: {wildcards.Chrs}
+		mkdir -p Chr{wildcards.Chrs}
+		cd Chr{wildcards.Chrs}
+		maker -CTL
+		cd ..
+
+		sed -i 's|RepeatMasker=/cvmfs/soft.computecanada.ca/easybuild/software/2020/avx2/Compiler/gcc9/repeatmasker/4.1.1/RepeatMasker|RepeatMasker=/home/msandler/scratch/Oxyria/Annotation/RepeatMasker/RepeatMasker|g'  Chr{wildcards.Chrs}/maker_exe.ctl
+
+		cp maker_opts.template Chr{wildcards.Chrs}/maker_opts.ctl
+		sed -i 's/model_org=all/model_org=/g'  Chr{wildcards.Chrs}/maker_opts.ctl
+		echo "########################" >> Chr{wildcards.Chrs}/maker_opts.ctl
+		echo "#-----Custom Parameters (these are always required)" >> Chr{wildcards.Chrs}/maker_opts.ctl
+		echo genome=$BASEDIR/{params.project}/Ref/scaffold_{wildcards.Chrs}.fasta >> Chr{wildcards.Chrs}/maker_opts.ctl
+		echo "est=$BASEDIR/{input.EST_File}" >> Chr{wildcards.Chrs}/maker_opts.ctl
+		echo "protein=$BASEDIR/{input.Protein_File}" >> Chr{wildcards.Chrs}/maker_opts.ctl
+		echo "repeat_protein=$BASEDIR/{input.Repeats_File}" >> Chr{wildcards.Chrs}/maker_opts.ctl
+		echo "augustus_species=arabidopsis" >> Chr{wildcards.Chrs}/maker_opts.ctl
+		
+		cd Chr{wildcards.Chrs}
+		
+		mpiexec --use-hwthread-cpus maker -fix_nucleotides 
+		
+		module unload postgresql/13.2
+		module unload openmpi/4.0.3 
+		module unload maker/3.01.03
+		module unload augustus/3.4.0
+		"""
+
+#--------------------------------------------------------------------------------
+# POST_MAKER: Create the consensus of gff and correct map name
+#--------------------------------------------------------------------------------
+
+rule POST_MAKER:
+	input:
+		Maker_File=rules.MAKER3.output,
+	output:
+		"{Project}/Maker_Files/Chr{Chrs}/scaffold_{Chrs}.maker.output/scaffold_{Chrs}.all.gff",
+	params:
+		project=PROJECT,
+		AED_filter=AED_FILTER,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		cd {params.project}/Maker_Files
+		cp quality_filter.pl Chr{wildcards.Chrs}/scaffold_{wildcards.Chrs}.maker.output
+		module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 maker/3.01.03
+		cd Chr{wildcards.Chrs}/scaffold_{wildcards.Chrs}.maker.output
+		fasta_merge -d scaffold_{wildcards.Chrs}_master_datastore_index.log
+		gff3_merge -d scaffold_{wildcards.Chrs}_master_datastore_index.log
+		maker_map_ids --prefix {params.project}_Chr{wildcards.Chrs} --justify 8 scaffold_{wildcards.Chrs}.all.gff > map
+		map_gff_ids map scaffold_{wildcards.Chrs}.all.gff
+		#map_fasta_ids map scaffold_{wildcards.Chrs}.all.maker.proteins.fasta
+		#map_fasta_ids map scaffold_{wildcards.Chrs}.all.maker.transcripts.fasta
+		cd ../../..
+		"""
+
+#--------------------------------------------------------------------------------
+# AED_FILTER: Perform Maker Analysis, using 3 differente AED filter values
+#--------------------------------------------------------------------------------
+
+rule AED_FILTER:
+	input:
+		Maker_File=rules.POST_MAKER.output,
+	output:
+		"{Project}/Maker_Files/Chr{Chrs}/MAKER_Filtered.scaffold_{Chrs}.all.AED_{AED_filter}.gff3",
+	params:
+		project=PROJECT,
+		AED_filter=AED_FILTER,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		cd {params.project}/Maker_Files
+		cd Chr{wildcards.Chrs}/scaffold_{wildcards.Chrs}.maker.output
+		#####AED filter#####
+		
+		perl quality_filter.pl -a {wildcards.AED_filter} scaffold_{wildcards.Chrs}.all.gff > scaffold_{wildcards.Chrs}.all.AED_{wildcards.AED_filter}.gff 
+		cd ..
+		sed -n 1p scaffold_{wildcards.Chrs}.maker.output/scaffold_{wildcards.Chrs}.all.AED_{wildcards.AED_filter}.gff  > MAKER_Filtered.scaffold_{wildcards.Chrs}.all.AED_{wildcards.AED_filter}.gff3
+		awk '$2 == "maker"' scaffold_{wildcards.Chrs}.maker.output/scaffold_{wildcards.Chrs}.all.AED_{wildcards.AED_filter}.gff >> MAKER_Filtered.scaffold_{wildcards.Chrs}.all.AED_{wildcards.AED_filter}.gff3
+		cd ../../.
+		"""
+
+
+#------------------------------------------------------------------------------------
+# ORF_analysis: Uses EDTA maked fasta file and ORF analysis to determine viable genes
+#------------------------------------------------------------------------------------
+
+rule ORF_analysis:
+	input:
+		GFF3_File=rules.AED_FILTER.output,
+		Ref_File=rules.Chr_splitting.output,
+		Masked_FASTA_File=rules.Masked_FASTA.output,
+	output:
+		"{Project}/Post_Maker_Files/MAKER_ORF_Filtered_{Project}.scaffold_{Chrs}.AED_{AED_filter}.gff3",
+	params:
+		project=PROJECT,
+		AED_filter=AED_FILTER,
+	threads: 48
+	resources:
+		mem_mb=187000, #4GB
+		time=1000 #minutes
+	shell:
+		"""
+		BASEDIR=$PWD 
+		cp -v Post_Maker_ORF_Analysis_Terminal.R {params.project}/Post_Maker_Files
+		cd {params.project}/Post_Maker_Files 
+
+		module load  StdEnv/2020 r/4.1.0
+		R --vanilla < Post_Maker_ORF_Analysis_Terminal.R --args -g $BASEDIR/{params.project}/Maker_Files/Chr{wildcards.Chrs}/MAKER_Filtered.scaffold_{wildcards.Chrs}.all.AED_{wildcards.AED_filter}.gff3 -a $BASEDIR/{params.project}/Ref/scaffold_{wildcards.Chrs}.fasta -m $BASEDIR/{params.project}/EDTA_Files/{params.project}_chr{wildcards.Chrs}.masked.fasta -o {params.project}.scaffold_{wildcards.Chrs}.AED_{wildcards.AED_filter}
+
+		cd ../../.
+		"""
+
+
+#------------------------------------------------------------------------------------
+# Chr_merge: Fuse all gff3 individual chromosomes into complete assembly again
+#------------------------------------------------------------------------------------
+
+rule Chr_merge:
+	input:
+		expand("{Project}/Post_Maker_Files/MAKER_ORF_Filtered_{Project}.scaffold_{Chrs}.AED_{AED_filter}.gff3",Project=PROJECT,Chrs = CHRS,AED_filter=AED_FILTER),
+	output:
+		"{Project}/FINAL_ANNOTATION/FINAL_{Project}.AED_{AED_filter}.sorted.gff3",
+	params:
+		project=PROJECT,
+		Chrs=CHRS,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		cat {params.project}/Post_Maker_Files/predicted_Pseudogenes_MAKER_ORF_Filtered_{params.project}.scaffold_1.AED_{wildcards.AED_filter}.gff3 > {params.project}/FINAL_ANNOTATION/FINAL_{params.project}.AED_{wildcards.AED_filter}.gff3
+
+        for i in {{2,3,4,5,6,7,8}} 
+            do
+            tail -n +4 {params.project}/Post_Maker_Files/MAKER_ORF_Filtered_{params.project}.scaffold_$i.AED_{wildcards.AED_filter}.gff3 >> {params.project}/FINAL_ANNOTATION/FINAL_{params.project}.AED_{wildcards.AED_filter}.gff3
+            tail -n +4 {params.project}/Post_Maker_Files/predicted_Pseudogenes_MAKER_ORF_Filtered_{params.project}.scaffold_$i.AED_{wildcards.AED_filter}.gff3 >> {params.project}/FINAL_ANNOTATION/FINAL_{params.project}.AED_{wildcards.AED_filter}.gff3
+        done
+
+        ../gff3sort/gff3sort.pl --chr_order original {params.project}/FINAL_ANNOTATION/FINAL_{params.project}.AED_{wildcards.AED_filter}.gff3 > {params.project}/FINAL_ANNOTATION/FINAL_{params.project}.AED_{wildcards.AED_filter}.sorted.gff3
+        """
+
+
+#------------------------------------------------------------------------------------
+# GFF3_statistics: Calculate Statistics for Original and filtered GFF3 files
+#------------------------------------------------------------------------------------
+
+rule GFF3_statistics:
+	input:
+		GFF3_file=rules.Chr_merge.output,
+	output:
+		New_GFF3_summary="{Project}/Summary_data/JML.{Project}.AED_{AED_filter}_GFF3_summary.txt",
+	params:
+		project=PROJECT,
+	threads: 1
+	resources:
+		mem_mb=4000, #4GB
+		time=30 #minutes
+	shell:
+		"""
+		BASEDIR=$PWD
+		cp -v GFF3_Summary_Statistics.R {params.project}/Summary_data/
+		cd {params.project}/Summary_data/
+		
+		echo Calculating Statistics on New processed file
+		module load  StdEnv/2020 r/4.1.0
+		R --vanilla < GFF3_Summary_Statistics.R --args --gff $BASEDIR/{input.GFF3_file} -o JML.{params.project}.AED_{wildcards.AED_filter}
+		
+		cd ../..
+		"""
+
+#------------------------------------------------------------------------------------
+# Summary_statistics: Get summary of the new gff3 file
+#------------------------------------------------------------------------------------
+
+rule Summary_statistics:
+	input:
+		GFF3_file=rules.Chr_merge.output,
+	output:
+		Protein_FASTA="{Project}/Summary_data/{Project}.AED_{AED_filter}_protein.fasta",
+	params:
+		project=PROJECT,
+	threads: 48
+	resources:
+		mem_mb=187000, #4GB
+		time=1400 #minutes
+	shell:
+		"""
+		BASEDIR=$PWD
+		cd {params.project}/Post_Maker_Files
+
+			echo starting PROTEIN MERGE process on: GFF3_{wildcards.AED_filter}.fasta
+			cat predicted_proteins*AED_{wildcards.AED_filter}.fasta > $BASEDIR/{params.project}/Summary_data/{params.project}.AED_{wildcards.AED_filter}_protein.fasta
+
+		echo Protein File Generated correctly CORRECTLY ....
+		cd ../..
+		"""
+
+
+#---------------------------------------------------------------------------------------
+# BUSCO: Evaluate the Predicted_Protein results into BUSCO protein mode from Orignal GFF3
+#---------------------------------------------------------------------------------------
+
+#rule BUSCO:
+#	input:
+#		Protein_fasta=rules.Summary_statistics.output.Protein_FASTA,
+#	output:
+#		Busco_results="{Project}/Summary_data/{Project}.AED_{AED_filter}_busco/short_summary.specific.eudicots_odb10.{Project}.AED_{AED_filter}_busco.txt",
+#	params:
+#		project=PROJECT,
+#	threads: 48
+#	resources:
+#		mem_mb=187000, #4GB
+#		time=700 #minutes
+#	shell:
+#		"""
+#		BASEDIR=$PWD
+#		cd $BASEDIR/{params.project}/Summary_data/
+		
+		#set +u
+		#eval "$(conda shell.bash hook)"
+		#source ~/miniconda2/bin/activate BUSCO
+		#set -u
+#		module load StdEnv/2020 gcc python augustus hmmer blast+ metaeuk prodigal r
+#		echo starting BUSCO process on: Protein_file_{wildcards.AED_filter}.fasta
+#		busco -f -c 48 -m protein -i $BASEDIR/{params.project}/Summary_data/{params.project}.AED_{wildcards.AED_filter}_protein.fasta -o {params.project}.AED_{wildcards.AED_filter}_busco -l eudicots_odb10 \
+#		--download_path /project/6019339/celphin/Cannabis/BUSCO_downloads/BUSCO_downloads/
+		
+		#conda deactivate
+		#set +u
+		
+#		echo done BUSCO analysis
+#		"""		  
+
+#---------------------------------------------------------------------------------------
+# INTERPRO: Add functional annotation to the GFF3
+#---------------------------------------------------------------------------------------
+
+# rule INTERPRO:
+#	input:
+#		Protein_fasta=rules.Summary_statistics.output.Protein_FASTA,
+#		GFF3_file=rules.Chr_merge.output,
+#	output:
+#		INTERPRO_OUTPUT="{Project}/INTERPRO/{Project}.AED_{AED_filter}_protein.interpro.fasta.tsv",
+#		INTERPRO_GFF3="{Project}/FINAL_ANNOTATION/FINAL_{Project}.AED_{AED_filter}.sorted.interpro.gff3",
+#	params:
+#		project=PROJECT,
+#	threads: 48
+#	resources:
+#		mem_mb=187000, #4GB
+#		time=1400 #minutes
+#	shell:
+#		"""
+#		awk '{ gsub(/\*/, "X"); print }'  {input.Protein_fasta} > Oxyria_protein.fasta
+#
+#		module load StdEnv/2020
+#		module load interproscan/5.63-95.0
+#
+#		srun interproscan.sh -i Oxyria_Protein.fasta -cpu 30 -f tsv -o {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.tsv  --goterms
+#
+#
+#
+#		#sed 's/*//g' {input.Protein_fasta} > {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta
+#		#../interproscan-5.57-90.0/interproscan.sh --formats tsv --goterms --cpu 48 --input {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta --applications Pfam -o {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.tsv
+#		
+#		cp -v {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.tsv {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.intermediate.tsv
+#		sed -i 's/ /_/g' {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.intermediate.tsv 
+#		sed -i 's/,/./g' {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.intermediate.tsv 
+#		sed -i 's/\t/,/g' {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.intermediate.tsv
+#		
+#		module load  StdEnv/2020 r/4.2.2
+#		R --vanilla < Interpro_merger.R --args -g {input.GFF3_file} -a {params.project}/INTERPRO/{params.project}.AED_{wildcards.AED_filter}_protein.interpro.fasta.intermediate.tsv -o {params.project}/INTERPRO/FINAL_{params.project}.AED_{wildcards.AED_filter}.sorted.interpro.gff3
+#		../gff3sort/gff3sort.pl --chr_order original {params.project}/INTERPRO/FINAL_{params.project}.AED_{wildcards.AED_filter}.sorted.interpro.gff3 > {params.project}/FINAL_ANNOTATION/FINAL_{params.project}.AED_{wildcards.AED_filter}.sorted.interpro.gff3
+#		"""    
+  

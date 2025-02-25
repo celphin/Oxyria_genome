@@ -1,0 +1,22 @@
+# May 5 2022
+#-----------------------
+# data download
+
+wget PacBio_data.zip https://sbcshare.sequencing.ubc.ca/s/axxN4S3jXWwNaAq/download
+unzip download
+
+#----------------------
+#Quality check
+
+#https://www.bioinformatics.babraham.ac.uk/projects/fastqc/INSTALL.txt
+
+cd /home/celphin/scratch/Oxyria/PacBio_April22
+
+module load StdEnv/2020
+module load fastqc/0.11.9
+
+fastqc *fastq.gz -o ./fastQC_reports
+
+#--------------------
+
+

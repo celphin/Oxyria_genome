@@ -1,0 +1,851 @@
+# May 5 2022
+#-----------------------
+# Extra PacBio data download
+
+wget PacBio_data.zip https://sbcshare.sequencing.ubc.ca/s/axxN4S3jXWwNaAq/download
+unzip download
+
+#----------------------
+#Quality check
+
+#https://www.bioinformatics.babraham.ac.uk/projects/fastqc/INSTALL.txt
+
+cd /home/celphin/scratch/Oxyria/PacBio_April22
+
+module load StdEnv/2020
+module load fastqc/0.11.9
+
+fastqc *fastq.gz -o ./fastQC_reports
+
+
+#--------------------
+# total PacBio data download
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022
+
+tmux new-session -s download
+tmux attach-session -t download
+
+read -p "Login: " login && read -p "Password: " -s password && echo -n "j_username=$login&j_password=$password" > .auth.txt && chmod 600 .auth.txt && wget -O - "https://ces.genomequebec.com/nanuqMPS/readsetList?projectId=21515&tech=Sequel" --no-cookies --no-check-certificate --post-file .auth.txt | wget --no-cookies --no-check-certificate --post-file .auth.txt -ci -; rm -f .auth.txt
+
+FINISHED --2022-08-15 04:02:12--
+Total wall clock time: 12h 3m 15s
+Downloaded: 8 files, 533G in 11h 47m 42s (12.8 MB/s)
+
+md5sum -c readSets.md5
+
+#-----------------------------------
+# bam to fastq
+module load StdEnv/2020
+module load samtools/1.15.1
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/
+samtools bam2fq SAMPLE.bam > SAMPLE.fastq
+
+samtools bam2fq Sequel.RunS218_S2.003.Oxyria_C.subreads.bam > Oxyria_subreads0003.fastq
+samtools bam2fq Sequel.RunS218_S2.004.Oxyria_C.subreads.bam > Oxyria_subreads0004.fastq 
+
+[M::bam2fq_mainloop] discarded 0 singletons
+[M::bam2fq_mainloop] processed 21389047 reads
+[M::bam2fq_mainloop] discarded 0 singletons
+[M::bam2fq_mainloop] processed 23466654 reads
+
+tar -cvzf HiFi-subreads.tar.gz Oxyria_subreads0003.fastq Oxyria_subreads0004.fastq
+
+#-----------------------------------
+#-------------------------------------
+# Hifiasm
+# https://hifiasm.readthedocs.io/en/latest/hic-assembly.html 
+# https://github.com/chhylp123/hifiasm
+
+tmux new-session -s Oxy
+tmux attach-session -t Oxy
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/
+
+# Install hifiasm (requiring g++ and zlib)
+git clone https://github.com/chhylp123/hifiasm
+cd hifiasm && make
+
+# Hi-C phasing with paired-end short reads in two FASTQ files
+hifiasm 
+-o Oxyria1_Sept4.asm 
+-t32 
+--h1 NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz 
+--h2 NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz
+HiFi-reads.tar.gz
+
+# try running
+
+tmux new-session -s Oxy
+tmux attach-session -t Oxy
+
+salloc -c32 --time 02:50:00 --mem 120000m --account def-henryg
+#salloc -c32 --time 23:50:00 --mem 120000m --account def-henryg
+
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/
+./hifiasm/hifiasm -o Oxyria1_Sept4.asm -t32 --h1 ./Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 ./Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz ./PacBio/PacBio_Aug2022/HiFi-reads.tar.gz
+
+
+Killed
+[celphin@cdr1570 Oxyria]$ salloc: Job 44011593 has exceeded its time limit and its allocation has been revoked.
+                                                                                                               slurmstepd: error: *** STEP 44011593.interactive ON cdr1570 CANCELLED AT 2022-09-04T19:18:36 DUE TO TIME LIMIT ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd: error: Detected 1 oom-kill event(s) in StepId=44011593.interactive. Some of your processes may have been killed by the cgroup out-of-memory handler.
+srun: error: cdr1570: task 0: Out Of Memory
+srun: launch/slurm: _step_signal: Terminating StepId=44011593.interactive
+
+#-------------------------------------
+# try again with more memory
+# try with CPU from earlier assemblies
+
+nano cedar_Oxyria_hifiasm_Sept2022.sh
+
+
+#!/bin/bash
+#SBATCH --account=def-henryg
+#SBATCH --time=1-00:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32 
+#SBATCH --mem=3022G
+
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept4.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-reads.tar.gz
+
+sbatch cedar_Oxyria_hifiasm_Sept2022.sh
+
+squeue -u celphin
+          JOBID     USER      ACCOUNT           NAME  ST  TIME_LEFT NODES CPUS TRES_PER_N MIN_MEM NODELIST (REASON)
+       44030100  celphin def-henryg_c cedar_Oxyria_h  PD 1-00:00:00     1   32        N/A   3022G  (Resources)
+
+#2:11am
+squeue -u celphin
+          JOBID     USER      ACCOUNT           NAME  ST  TIME_LEFT NODES CPUS TRES_PER_N MIN_MEM NODELIST (REASON)
+       44030100  celphin def-henryg_c cedar_Oxyria_h   R   23:37:27     1   32        N/A   3022G cdr25 (None)
+
+/var/spool/slurmd/job44030100/slurm_script: line 8:  7719 Killed                  /home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/ce
+lphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept4.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217
+.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/
+projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-reads.tar.gz
+
+#-----------------------------
+# try test data
+
+# Run on test data (use -f0 for small datasets)
+wget https://github.com/chhylp123/hifiasm/releases/download/v0.7/chr11-2M.fa.gz
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o test -t4 -f0 chr11-2M.fa.gz 2> test.log
+awk '/^S/{print ">"$2;print $3}' test.bp.p_ctg.gfa > test.p_ctg.fa  # get primary contigs in FASTA
+
+# ran fine
+
+#----------------------------
+# try again with different input
+
+nano cedar_Oxyria_hifiasm_Sept2022_short.sh
+
+#!/bin/bash
+#SBATCH --account=def-henryg
+#SBATCH --time=0-07:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=48
+#SBATCH --mem=187G
+
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept4.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-reads.tar.gz
+
+sbatch cedar_Oxyria_hifiasm_Sept2022_short.sh
+
+squeue -u celphin
+          JOBID     USER      ACCOUNT           NAME  ST  TIME_LEFT NODES CPUS TRES_PER_N MIN_MEM NODELIST (REASON)
+       44053579  celphin def-henryg_c cedar_Oxyria_h   R    6:58:56     1   48        N/A    187G cdr1491 (None)
+
+#----------------------------
+# try again with interactive
+
+salloc -c32 --time 02:50:00 --mem 1510G --account def-henryg
+
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept4.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-reads.tar.gz
+
+ slurmstepd: error: *** STEP 44135231.interactive ON cdr463 CANCELLED AT 2022-09-06T12:40:09 DUE TO TIME LIMIT ***
+
+#----------------------------
+# try again with more time
+
+salloc -c32 --time 23:50:00 --mem 1510G --account def-henryg
+
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept4.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-ccs_reads.tar.gz
+
+
+Killed - memory out?? - 19 hours to go
+
+#--------------------------------
+
+# https://github.com/chhylp123/hifiasm/issues/11 
+# should be CCS reads
+# maybe format is not right
+# test with April reads??
+
+
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_April22/Oxyria_bc9.fastq.gz
+
+#----------------------------
+more /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/Oxyria_subreads0003.fastq
+
+@m64128_220724_085728/0/0_17465
+CGTCAAGTGAATCAACCTCACAACAAGCACAAATGATCAACCATCCATCAGCAAGCTCAAGTAATCAACCTCAACACAAGCACAGCAAATCCCTCAGTATCAACAGCATGGGCTAGATCCTTTCCTCACTCCTGCACAGCCTACACACCCACCACAAA
+CAACAATGCACTTACAACAGCAGATTCAAACCCCATTCCTTCTCAGCCCCTGTCTATCATCCACCATACAGCAAAGTCATCAGCAGCCAAACCAAGGGCCTCCACCATGGAGTTTCCTCACAAGGAGTAGCCGTGCTGGGTGGTTGCATACCCAATGT
+ACGAGGGCGACGGGACCCGCTTTCTCAGGTGTGTGTAACCACCGCCAGCAAACGCCCCCCCTTCAGAACCCGCCAGCAGGACATATGGTCGAGGCCCGACTCCCAACAACAACCCAACAACAGTCAGTTCGAAACACACCCGTACAATGAACTGAGGT
+GGATAATGCGGTTAGCAGGTATAGAGTGGGACCATGGTTGCGAGCGAGGTTCAGAGGCTTGAGAGAGTGTCAGCCTGTGGATTTCATGCTGTTCTTGATAAGGTTGAATGCTCAATCTTCAGGAGGCTCACAGAGGTCATGGATTGATGAGCCATTAT
+ATATGATTCTGTTGCTTACATGTGTCTGAAAATAAAGTATCTTGTGTGAAGGGTTGCTTGGGATATATATAGAAAATATGAATCATTGGTACATTCCCAGCTTTGTTGTTTGAGATTGAAGAATGTTTGGCGATTTGGTCATCTATTCAATACTAGTA
+TTCAAATGTCATGAAATAAAGTTGCTTATGACTTGAAGTGTATTTACCCTGTGTTTTATTTAAAATTTCAGTTGTGTCCTGAAACTAAGTAAATATGGGTTAAATACAGTTTGAATTAAAAGAAATAGATTTGATTTATCTTTGATGTCCAAGTTGTC
+ATCAATCTATTTCCTTAAATTTGAATCAATTGGTTAATCTAGTTTGTACGCTTACTGTTAGCACACAGACCTAGCGCAAGGAGCCCTTAGTATGTGTCTATTAAGGAGAGAGCCAAGGGACAGGCCAGTTACAAAACTATTCAAATAGGAAATAGAGC
+TCTTGGGTTATAGTGTATTTAAGTGTTTTATATATCTTGACTGTTGGTGTTTCTGCAGCCTCGTGTTAGATTTAAATATGGGAGTCTATTCTGCTTCAGAGATCATCCAAAACACAAGTGAAGGTTTTGCATTGGAGGAGAGTATTTCTCCATTAAAA
+GTGTGTGTAGGTCTGTTTCCTTGTCCAGTCAATCTCAAATAAAAAGTCATCTGGGAGTTTCCATGTTCTGTAGTTCAACACAGTGTCTGCATTGTTGTTCTTTGCTTTGCTGTGTGAGCACTATCTGATCAGTATCAACAAGGAATTACTTGTTTTTC
+CTACACAAAGCAGCTCCCCACATAAAGAATTCCAAAACTGTGAATTCAGGCGCATCTAATTCTCTATTTTCACATTGCAGGTATAATGCATGGATTCATTCTTAAATGTTTTCTACTTAAAATCGTGTCCACGGCTATATTTAGGAGATTTCTCTGTT
+CCAACAAAATTTAAATAATACTCTCCTTTGTGCTCAGATAATCTCAACCTCTTTTCTCATTGCACAATGATTGGATCCTTGCTTCACAAGGACTTGTTGTATGTTACATCCTAAACTTCGAGATCAATTTCAATTTCACAATTTTTTTGCGCTTCATC
+TCATATTATAAACTCTTGCATGCTGCAGATGATCTTTGGCTACGCATATCCAGCTTATAGTGCTTCAAATGGTTGAGAACAATACGTCATAGATCCAGGCCAACTGCGTTTTTGGGTGTCAAATTGTTAGTTTCTCAATTTAACATTTGACATTATGA
+AATTAATAACAAGTCTAAACTTCCATTAGAAT
+
+#--------------------------------
+# try again with ccs reads not subreads
+
+# need ccs reads
+tmux new-session -s bam
+tmux attach-session -t bam
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022
+
+module load StdEnv/2020
+module load samtools/1.15.1
+
+samtools bam2fq Sequel.RunS218_S2.003.Oxyria_C.ccs.bam > Oxyria_0003_ccs.fastq 
+[M::bam2fq_mainloop] discarded 0 singletons
+[M::bam2fq_mainloop] processed 1138973 reads
+
+samtools bam2fq Sequel.RunS218_S2.004.Oxyria_C.ccs.bam > Oxyria_0004_ccs.fastq 
+[M::bam2fq_mainloop] discarded 0 singletons
+[M::bam2fq_mainloop] processed 1237599 reads
+
+# zip up data
+salloc -c1 --time 2:50:00 --mem 1510G --account def-henryg
+tar -cvzf HiFi-ccs_reads.tar.gz Oxyria_0003_ccs.fastq Oxyria_0004_ccs.fastq 
+
+
+# try again with ccs reads
+salloc -c32 --time 23:50:00 --mem 1510G --account def-henryg
+
+/home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm
+ -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6.asm
+ -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz
+ --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz
+ /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-ccs_reads.tar.gz
+
+[M::ha_analyze_count] left: none
+[M::ha_analyze_count] right: count[56] = 7429776
+[M::ha_ft_gen] peak_hom: 56; peak_het: 28
+[M::ha_ct_shrink::979.499*7.87] ==> counted 5093711 distinct minimizer k-mers
+[M::ha_ft_gen::982.930*7.85@20.872GB] ==> filtered out 5093711 k-mers occurring 280 or more times
+[M::ha_opt_update_cov] updated max_n_chain to 280
+[M::yak_count] collected 878997595 minimizers
+[M::ha_pt_gen::1514.717*7.90] ==> counted 38661657 distinct minimizer k-mers
+[M::ha_pt_gen] count[4095] = 0 (for sanity check)
+[M::ha_analyze_count] lowest: count[10] = 26177
+[M::ha_analyze_count] highest: count[27] = 630362
+[M::ha_hist_line]     1: ****************************************************************************************************> 18966805
+[M::ha_hist_line]     2: ****************************************************************************************************> 1124580
+[M::ha_hist_line]     3: ************************************************ 304805
+[M::ha_hist_line]     4: ********************* 133135
+[M::ha_hist_line]     5: ************ 74255
+[M::ha_hist_line]     6: ******** 47920
+[M::ha_hist_line]     7: ****** 35530
+[M::ha_hist_line]     8: ***** 29171
+[M::ha_hist_line]     9: **** 26359
+[M::ha_hist_line]    10: **** 26177
+[M::ha_hist_line]    11: ***** 28906
+[M::ha_hist_line]    12: ***** 33250
+[M::ha_hist_line]    13: ****** 39507
+[M::ha_hist_line]    14: ******** 50732
+[M::ha_hist_line]    15: *********** 67151
+[M::ha_hist_line]    16: ************** 89142
+[M::ha_hist_line]    17: ******************* 121318
+[M::ha_hist_line]    18: ************************** 161233
+[M::ha_hist_line]    19: ********************************* 209539                                                                                    [156/395]
+[M::ha_hist_line]    20: ****************************************** 263922
+[M::ha_hist_line]    21: **************************************************** 329234
+[M::ha_hist_line]    22: *************************************************************** 395978
+[M::ha_hist_line]    23: ************************************************************************** 466064
+[M::ha_hist_line]    24: ************************************************************************************ 527763
+[M::ha_hist_line]    25: ******************************************************************************************* 576581
+[M::ha_hist_line]    26: ************************************************************************************************* 613578
+[M::ha_hist_line]    27: **************************************************************************************************** 630362
+[M::ha_hist_line]    28: **************************************************************************************************** 629509
+[M::ha_hist_line]    29: ************************************************************************************************ 606825
+[M::ha_hist_line]    30: ******************************************************************************************* 570854
+[M::ha_hist_line]    31: *********************************************************************************** 522042
+[M::ha_hist_line]    32: ************************************************************************** 465909
+[M::ha_hist_line]    33: **************************************************************** 406468
+[M::ha_hist_line]    34: ******************************************************* 346852
+[M::ha_hist_line]    35: ********************************************** 291324
+[M::ha_hist_line]    36: ************************************** 240437
+[M::ha_hist_line]    37: ******************************** 199549
+[M::ha_hist_line]    38: *************************** 168181
+[M::ha_hist_line]    39: *********************** 144095
+[M::ha_hist_line]    40: ********************* 129572
+[M::ha_hist_line]    41: ******************** 123532
+[M::ha_hist_line]    42: ******************** 125919
+[M::ha_hist_line]    43: ********************* 135373
+[M::ha_hist_line]    44: *********************** 147966
+[M::ha_hist_line]    45: ************************** 165869
+[M::ha_hist_line]    46: ****************************** 186248
+[M::ha_hist_line]    47: ********************************* 209911
+[M::ha_hist_line]    48: ************************************* 232500
+[M::ha_hist_line]    49: ***************************************** 256126
+[M::ha_hist_line]    50: ******************************************** 276333
+[M::ha_hist_line]    51: *********************************************** 295641
+[M::ha_hist_line]    52: ************************************************* 311695
+[M::ha_hist_line]    53: *************************************************** 323590
+[M::ha_hist_line]    54: **************************************************** 329718
+[M::ha_hist_line]    55: ***************************************************** 332978
+[M::ha_hist_line]    56: ***************************************************** 331651
+[M::ha_hist_line]    57: **************************************************** 328722
+[M::ha_hist_line]    58: ************************************************** 315036
+[M::ha_hist_line]    59: *********************************************** 298332
+[M::ha_hist_line]    60: ********************************************* 282808
+[M::ha_hist_line]    61: ****************************************** 261853
+[M::ha_hist_line]    62: ************************************** 240872
+[M::ha_hist_line]    63: *********************************** 219614
+[M::ha_hist_line]    64: ******************************* 198130
+[M::ha_hist_line]    65: **************************** 175598
+[M::ha_hist_line]    66: ************************ 153721
+[M::ha_hist_line]    67: ********************* 132674
+[M::ha_hist_line]    68: ****************** 114684
+[M::ha_hist_line]    69: **************** 99156
+[M::ha_hist_line]    70: ************* 84544
+[M::ha_hist_line]    71: ************ 72509
+[M::ha_hist_line]    72: ********** 62353
+[M::ha_hist_line]    73: ********* 54281
+[M::ha_hist_line]    74: ******** 47588
+[M::ha_hist_line]    75: ******* 42134
+[M::ha_hist_line]    76: ****** 37711
+[M::ha_hist_line]    77: ***** 34569
+[M::ha_hist_line]    78: ***** 32293
+[M::ha_hist_line]    79: ***** 30532
+[M::ha_hist_line]    80: ***** 29084
+[M::ha_hist_line]    81: **** 28160
+[M::ha_hist_line]    82: **** 27338
+[M::ha_hist_line]    83: **** 26909
+[M::ha_hist_line]    84: **** 26319
+[M::ha_hist_line]    85: **** 25717
+[M::ha_hist_line]    86: **** 25739
+[M::ha_hist_line]    87: **** 24374
+[M::ha_hist_line]    88: **** 24130
+[M::ha_hist_line]    89: **** 23094
+[M::ha_hist_line]    90: **** 22365
+[M::ha_hist_line]    91: *** 21566
+[M::ha_hist_line]    92: *** 20933
+[M::ha_hist_line]    93: *** 20154
+[M::ha_hist_line]    99: *** 17130
+[M::ha_hist_line]   100: *** 16586
+[M::ha_hist_line]   101: *** 16288
+[M::ha_hist_line]   102: *** 15896
+[M::ha_hist_line]   103: ** 15711
+[M::ha_hist_line]   104: *** 15771
+[M::ha_hist_line]   105: ** 15444
+[M::ha_hist_line]   106: ** 15572
+[M::ha_hist_line]   107: *** 15797
+[M::ha_hist_line]   108: ** 15597
+[M::ha_hist_line]   109: ** 15155
+[M::ha_hist_line]   110: ** 15383
+[M::ha_hist_line]   111: ** 15439
+[M::ha_hist_line]   112: ** 15124
+[M::ha_hist_line]   113: ** 14983
+[M::ha_hist_line]   114: ** 14922
+[M::ha_hist_line]   115: ** 14795
+[M::ha_hist_line]   116: ** 14731
+[M::ha_hist_line]   117: ** 14533
+[M::ha_hist_line]   118: ** 13704
+[M::ha_hist_line]   119: ** 13550
+[M::ha_hist_line]   120: ** 13060
+[M::ha_hist_line]   121: ** 12985
+[M::ha_hist_line]   122: ** 12542
+[M::ha_hist_line]   123: ** 12083
+[M::ha_hist_line]   124: ** 11720
+[M::ha_hist_line]   125: ** 11500
+[M::ha_hist_line]   126: ** 10983
+[M::ha_hist_line]   127: ** 10604
+[M::ha_hist_line]   128: ** 10132
+[M::ha_hist_line]   129: ** 9837
+[M::ha_hist_line]   130: ** 9638
+[M::ha_hist_line]   131: * 9147
+[M::ha_hist_line]   132: * 9131
+[M::ha_hist_line]   133: * 8903
+[M::ha_hist_line]   134: * 8560
+[M::ha_hist_line]   135: * 8440
+[M::ha_hist_line]   136: * 8225
+[M::ha_hist_line]   137: * 7989
+
+
+
+[M::ha_hist_line]   176: * 4685
+[M::ha_hist_line]   177: * 4749
+[M::ha_hist_line]   178: * 4676
+[M::ha_hist_line]   179: * 4629
+[M::ha_hist_line]   180: * 4536
+[M::ha_hist_line]   181: * 4613
+[M::ha_hist_line]   182: * 4435
+[M::ha_hist_line]   183: * 4313
+[M::ha_hist_line]   184: * 4193
+[M::ha_hist_line]   185: * 4206
+[M::ha_hist_line]   186: * 4149
+[M::ha_hist_line]   187: * 4105
+[M::ha_hist_line]   188: * 4018
+[M::ha_hist_line]   189: * 3976
+[M::ha_hist_line]   190: * 3793
+[M::ha_hist_line]   191: * 3825
+[M::ha_hist_line]   192: * 3845
+[M::ha_hist_line]   193: * 3631
+[M::ha_hist_line]   194: * 3637
+[M::ha_hist_line]   195: * 3643
+[M::ha_hist_line]   196: * 3548
+[M::ha_hist_line]   197: * 3386
+[M::ha_hist_line]   198: * 3469
+[M::ha_hist_line]   199: * 3409
+[M::ha_hist_line]   200: * 3353
+[M::ha_hist_line]   201: * 3301
+[M::ha_hist_line]   202: * 3182
+[M::ha_hist_line]   203: * 3177
+[M::ha_hist_line]   204: * 3226
+[M::ha_hist_line]   205: * 3241
+[M::ha_hist_line]   206: * 3174
+[M::ha_hist_line]  rest: ************************** 162545
+[M::ha_analyze_count] left: none
+[M::ha_analyze_count] right: count[55] = 332978
+[M::ha_pt_gen] peak_hom: 55; peak_het: 27
+[M::ha_ct_shrink::1514.835*7.90] ==> counted 19694852 distinct minimizer k-mers
+[M::ha_pt_gen::] counting in normal mode
+[M::yak_count] collected 878997595 minimizers
+[M::ha_pt_gen::1711.608*9.32] ==> indexed 860030790 positions, counted 19694852 distinct minimizer k-mers
+
+
+
+[M::ha_hist_line]  rest: **************************** 175767
+[M::ha_analyze_count] left: none
+[M::ha_analyze_count] right: count[56] = 331532
+[M::ha_pt_gen] peak_hom: 56; peak_het: 28
+[M::ha_ct_shrink::7463.273*26.53] ==> counted 18079381 distinct minimizer k-mers
+[M::ha_pt_gen::] counting in normal mode
+[M::yak_count] collected 871849600 minimizers
+[M::ha_pt_gen::7655.420*26.38] ==> indexed 870601322 positions, counted 18079381 distinct minimizer k-mers
+
+
+
+Writing /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6.asm.hic.p_ctg.gfa to disk...
+[M::build_unitig_index::44.750] ==> Counting
+[M::build_unitig_index::8.382] ==> Memory allocating
+[M::build_unitig_index::63.636] ==> Filling pos
+[M::build_unitig_index::0.277] ==> Sorting pos
+[M::build_unitig_index::117.051] ==> HiC index has been built
+[M::write_hc_pt_index] Index has been written.
+[M::alignment_worker_pipeline::231.830] ==> Qualification
+[M::dedup_hits::1.196] ==> Dedup
+[M::mc_solve_core::0.129] ==> Partition
+[M::dedup_hits::0.658] ==> Dedup
+[M::stat] # misjoined unitigs: 7 (N50: 9858488); # corrected unitigs: 14 (N50: 8339145)
+[M::adjust_weight_kv_u_trans_advance::0.697]
+[M::mb_solve_core::1.460] ==> Partition
+[M::mc_solve_core::1.966] ==> Partition
+[M::adjust_weight_kv_u_trans_advance::4.504]
+[M::mb_solve_core::1.432] ==> Partition
+[M::mc_solve_core::1.929] ==> Partition
+[M::adjust_weight_kv_u_trans_advance::4.492]
+[M::mb_solve_core::1.421] ==> Partition
+[M::mc_solve_core::1.902] ==> Partition
+[M::stat] # heterozygous bases: 1064182092; # homozygous bases: 101045007
+[M::reduce_hamming_error::0.695] # inserted edges: 3992, # fixed bubbles: 7
+[M::adjust_utg_by_trio] primary contig coverage range: [47, infinity]
+Writing /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6.asm.hic.hap1.p_ctg.gfa to disk...
+[M::adjust_utg_by_trio] primary contig coverage range: [47, infinity]
+Writing /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6.asm.hic.hap2.p_ctg.gfa to disk...
+Inconsistency threshold for low-quality regions in BED files: 70%
+[M::main] Version: 0.16.1-r375
+[M::main] CMD: /home/celphin/projects/def-henryg/celphin/Oxyria/hifiasm/hifiasm -o /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6.asm -t32 --h1 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz --h2 /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/HiFi-ccs_reads.tar.gz
+[M::main] Real time: 20581.846 sec; CPU: 571748.638 sec; Peak RSS: 67.930 GB
+
+#---------------------------------
+# get fasta from gfa
+# https://hifiasm.readthedocs.io/en/latest/interpreting-output.html
+
+cd /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/
+
+awk '/^S/{print ">"$2;print $3}' Oxyria1_Sept6.asm.hic.p_ctg.gfa > Oxyria1_Sept6_haplotigs.p_ctg.fa
+
+# Hap 1
+awk '/^S/{print ">"$2;print $3}' Oxyria1_Sept6.asm.hic.hap1.p_ctg.gfa > Oxyria1_Sept6_haplotigs.Hap1.fa
+
+# Hap 2
+awk '/^S/{print ">"$2;print $3}' Oxyria1_Sept6.asm.hic.hap2.p_ctg.gfa > Oxyria1_Sept6_haplotigs.Hap2.fa
+
+# -rw-r-----  1 celphin rrg-rieseber-ac   582631719 Jun 18 13:16 Oxyria1_Sept6_haplotigs.Hap1.fa
+# -rw-r-----  1 celphin rrg-rieseber-ac   566600387 Jun 18 13:18 Oxyria1_Sept6_haplotigs.Hap2.fa
+# -rw-r--r--  1 celphin rrg-rieseber-ac   590386466 Nov 10  2023 Oxyria1_Sept6_haplotigs.p_ctg.fa
+
+#--------------------------
+# check fasta N50 etc.
+
+# Assembly stats
+
+module load StdEnv/2020 
+module load gcc/9.3.0
+module load r-bundle-bioconductor/3.14
+
+cd /home/celphin/assembly-stats
+
+./assembly-stats /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/Oxyria1_Sept6_haplotigs.p_ctg.fa
+
+stats for /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/Oxyria1_Sept6_haplotigs.p_ctg.fa
+sum = 590 373 804, n = 974, ave = 606 133.27, largest = 100 326 276
+N50 = 56 351 117, n = 4
+N60 = 39 295 833, n = 6
+N70 = 34 734 330, n = 7
+N80 = 28 174 138, n = 9
+N90 = 10 901 797, n = 13
+N100 = 14349, n = 974
+N_count = 0
+Gaps = 0
+
+2n = 14 and 42
+
+Genome size: 800-1000 Mbp
+#----------------------------
+cd /home/celphin/assembly-stats
+
+./assembly-stats /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/Oxyria1_Sept6_haplotigs.Hap1.fa
+
+stats for /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/Oxyria1_Sept6_haplotigs.Hap1.fa
+sum = 582 616 305, n = 1101, ave = 529170.12, largest = 76049245
+N50 = 38 327 256, n = 6
+N60 = 26 598 077, n = 8
+N70 = 17086624, n = 11
+N80 = 10595219, n = 15
+N90 = 2919708, n = 27
+N100 = 12798, n = 1101
+N_count = 0
+Gaps = 0
+
+
+./assembly-stats /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/Oxyria1_Sept6_haplotigs.Hap2.fa
+
+stats for /home/celphin/projects/rpp-rieseber/celphin/Oxyria/Oxyria_haplotigs_Sept6/Oxyria1_Sept6_haplotigs.Hap2.fa
+sum = 566 594 759, n = 402, ave = 1409439.70, largest = 49230237
+N50 = 27 807 003, n = 9
+N60 = 26766067, n = 11
+N70 = 22934860, n = 13
+N80 = 15449834, n = 16
+N90 = 5566760, n = 23
+N100 = 14349, n = 402
+N_count = 0
+Gaps = 0
+
+
+###########################
+# send HiC data to Christine
+
+scp -rv /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R*.fastq.gz* aphill@kebnekaise.hpc2n.umu.se:/proj/nobackup/snic2021-22-543/oxyria_ref/
+
+folder: aphill@kebnekaise.hpc2n.umu.se:/proj/nobackup/snic2021-22-543/oxyria_ref
+Password: 0xyr1a_ref$_144
+
+####################################
+# run Longstitch
+
+# copy over the draft fasta and the fastq files
+
+cd /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/
+cp -v /home/celphin/projects/def-henryg/celphin/Oxyria/Oxyria1_Sept6_haplotigs.p_ctg.fa /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/
+cp -v /home/celphin/projects/def-henryg/celphin/Oxyria/PacBio/PacBio_Aug2022/Oxyria_000*_ccs.fastq /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/
+
+mv Oxyria1_Sept6_haplotigs.p_ctg.fa Oxyria1_Sept6_haplotigs.fa
+
+gzip -c Oxyria_0003_ccs.fastq > Oxyria_0003_ccs.fq.gz
+gzip -c Oxyria_0004_ccs.fastq > Oxyria_0004_ccs.fq.gz
+
+#--------------------------------------
+tmux new-session -s Oxy
+tmux attach-session -t Oxy
+
+cd /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/
+
+salloc --ntasks-per-node=30 --mem=12000M --time 23:00:00 --account def-henryg
+
+module load singularity
+
+cd /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/
+
+singularity exec -B $PWD:/home/celphin \
+longstich-1.0.1.sif \
+longstitch run draft=Oxyria1_Sept6_haplotigs reads=Oxyria_0003_ccs G=9e8 k_ntLink=24 longmap=pb
+
+
+> longstich-1.0.1.sif \
+> longstitch run draft=Oxyria1_Sept6_haplotigs reads=Oxyria_0003_ccs G=9e8 k_ntLink=24 longmap=pb
+tigmint-make tigmint-long draft=Oxyria1_Sept6_haplotigs reads=Oxyria_0003_ccs cut=250 t=8 G=9e8 span=auto dist=auto
+make[1]: Entering directory '/home/celphin'
+sh -c 'gunzip -c Oxyria_0003_ccs.fq.gz | \
+/opt/conda/bin/share/tigmint-1.2.5-1/bin/tigmint_estimate_dist.py - -n 1000000 -o Oxyria_0003_ccs.tigmint-long.params.tsv'
+
+
+#------------------------------------------
+
+mv Oxyria1_Sept6_haplotigs.cut250.tigmint.fa.k24.w100.z1000.stitch.abyss-scaffold.fa Oxyria1_Sept6_haplotigs_oxy3.fa
+
+#--------------
+# Assembly stats
+module load StdEnv/2020 
+module load gcc/9.3.0
+module load r-bundle-bioconductor/3.14
+
+cd /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/GenomeQC/assembly-stats
+
+./assembly-stats /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/Oxyria1_Sept6_haplotigs_oxy3.fa
+
+stats for /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/Oxyria1_Sept6_haplotigs_oxy3.fa
+sum = 590417620, n = 1570, ave = 376062.18, largest = 73865576
+N50 = 34215203, n = 7
+N60 = 29481781, n = 9
+N70 = 27178534, n = 11
+N80 = 13613509, n = 15
+N90 = 6379873, n = 20
+N100 = 7, n = 1570
+N_count = 77758
+Gaps = 224
+
+
+
+##########################
+singularity exec -B $PWD:/home/celphin \
+longstich-1.0.1.sif \
+longstitch run draft=Oxyria1_Sept6_haplotigs_oxy3 reads=Oxyria_0004_ccs G=9e8 k_ntLink=24 longmap=pb
+
+# tried to cancel part way...
+# might finish??
+# running on login node
+
+#----------------------
+# run Salsa pipeline
+
+#################################################################
+# Hi-C scaffolding
+# https://svn.bcgsc.ca/bitbucket/projects/CAN/repos/hic_scaffolding/browse
+########################################################
+
+cd /home/celphin/scratch/Hi-C_scaffold
+# git clone https://svn.bcgsc.ca/bitbucket/scm/can/hic_scaffolding.git
+# use Plectritis folder
+
+#--------------------------------------
+
+# rename Plectritis output, log, logs and tmp directories
+
+
+#-----------------------------------
+# move data needed over
+
+#try copying input files to main directory
+cp -v /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/Polish/LongStitch/Oxyria1_Sept6_haplotigs_oxy3.fa /scratch/celphin/Hi-C_scaffold/hic_scaffolding/Oxy_draft_assembly.fa
+cp -v /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R1.fastq.gz /scratch/celphin/Hi-C_scaffold/hic_scaffolding/Oxy_HiC_R1.fastq.gz
+cp -v /home/celphin/projects/def-henryg/celphin/Oxyria/Hi-C/NS.1871.003.IDT_i7_217---IDT_i5_217.Oxyria_Hi-C_R2.fastq.gz /scratch/celphin/Hi-C_scaffold/hic_scaffolding/Oxy_HiC_R2.fastq.gz
+
+#----------------------
+#Edit the config files in config directory
+
+nano /home/celphin/scratch/Hi-C_scaffold/hic_scaffolding/config/sample.yaml
+samples:
+    # Prefix name for files
+    Oxy_dig_1:
+        # Path to draft assembly
+        scaffold:
+            "/home/celphin/scratch/Hi-C_scaffold/hic_scaffolding/Oxy_draft_assembly.fa"
+        # Path to R1 file
+        R1_file:
+            "/home/celphin/scratch/Hi-C_scaffold/hic_scaffolding/Oxy_HiC_R1.fastq.gz"
+        # Path to R2 file
+        R2_file:
+            "/home/celphin/scratch/Hi-C_scaffold/hic_scaffolding/Oxy_HiC_R2.fastq.gz"
+
+
+nano /home/celphin/scratch/Hi-C_scaffold/hic_scaffolding/config/config.json
+
+{
+  "nextflow_dir": "nextflow",
+  "output_dir": "/home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding"
+}
+
+#--------------------------------------
+# need to replace : in contig names
+
+# replace : with _
+
+more Oxy_draft_assembly.fa
+grep ":" Oxy_draft_assembly.fa
+sed -i 's/:/_/g' Oxy_draft_assembly.fa
+
+grep ":" Oxy_draft_assembly.fa
+grep "_" Oxy_draft_assembly.fa
+
+
+#--------------------------------------
+
+tmux new-session -s Oxy2
+tmux attach-session -t Oxy2
+
+module load singularity/3.8
+module load StdEnv/2020
+module load intel/2020.1.217
+module load nextflow/22.04.3
+module load metagenome-atlas/2.5.0
+module load java/13.0.2
+
+cd /home/celphin/scratch/Hi-C_scaffold/hic_scaffolding
+
+snakemake --profile cc-slurm -c30 --use-singularity --singularity-args "-B /home/celphin/scratch/Hi-C_scaffold/hic_scaffolding -B /localscratch:/localscratch"
+
+# running!!
+
+squeue -u celphin
+
+more log/Oxy_dig_1/nf_core.out
+
+tail -n 50 log/Oxy_dig_1/nf_core.out
+
+executor >  slurm (69)
+[4b/cf86c5] process > get_software_versions          [100%] 1 of 1 ✔
+[69/1bdead] process > makeBowtie2Index (Oxy_draft... [100%] 1 of 1 ✔
+[54/b7e6fb] process > makeChromSize (Oxy_draft_as... [100%] 1 of 1 ✔
+[25/fa18cb] process > getRestrictionFragments (Ox... [100%] 1 of 1 ✔
+[48/12237e] process > bowtie2_end_to_end (R_R2.1)    [100%] 10 of 10 ✔
+[52/a27462] process > trim_reads (R_R2.1)            [100%] 10 of 10 ✔
+[6a/ca617b] process > bowtie2_on_trimmed_reads (R... [100%] 10 of 10 ✔
+[23/d81914] process > bowtie2_merge_mapping_steps... [100%] 10 of 10 ✔
+[d5/73711b] process > combine_mates (R.4 = R_R1.4... [100%] 5 of 5 ✔
+[83/0fa8ad] process > get_valid_interaction (R)      [100%] 5 of 5 ✔
+[84/d9fb5d] process > remove_duplicates (R)          [100%] 1 of 1 ✔
+[43/c5b179] process > merge_stats (mRSstat)          [100%] 4 of 4 ✔
+[-        ] process > build_contact_maps             -
+[-        ] process > run_ice                        -
+[e5/1b6a26] process > convert_to_pairs (R)           [100%] 1 of 1 ✔
+[3a/9ab723] process > cooler_raw (R - 250000)        [100%] 2 of 2 ✔
+[6b/687273] process > cooler_balance (R - 250000)    [100%] 2 of 2 ✔
+[c2/38cbb4] process > cooler_zoomify (R)             [100%] 1 of 1 ✔
+[c4/bf29e7] process > dist_decay (R)                 [100%] 1 of 1 ✔
+[e2/150b88] process > compartment_calling (R - 25... [100%] 1 of 1 ✔
+[-        ] process > tads_hicexplorer               -
+[-        ] process > tads_insulation                -
+[e6/ccb0bc] process > multiqc                        [100%] 1 of 1 ✔
+[d1/c3217b] process > output_documentation           [100%] 1 of 1 ✔
+-[nf-core/hic] Pipeline completed successfully-
+WARN: [nf-core/hic] Could not attach MultiQC report to summary email
+Completed at: 08-Sep-2022 19:12:08
+Duration    : 2h 3m 21s
+CPU hours   : 35.8
+Succeeded   : 69
+
+#---------------------------------------
+#Salsa part
+
+more log/Oxy_dig_1/run_salsa.out
+
+more log/Oxy_dig_1/salsaToHic.out
+
+
+#------------------------------
+# check final assembly stats
+
+module load StdEnv/2020 
+module load gcc/9.3.0
+module load r-bundle-bioconductor/3.14
+
+cd /home/celphin/projects/def-cronk/celphin/Plectritis_analysis/Assembly/GenomeQC/assembly-stats
+
+./assembly-stats /home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding/Oxy_dig_1.scaffolds_FINAL.fasta
+
+stats for /home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding/Oxy_dig_1.scaffolds_FINAL.fasta
+sum = 590 426 120, n = 1553, ave = 380184.24, largest = 127 935 232
+N50 = 73 842 794, n = 4
+N60 = 73 289 246, n = 5
+N70 = 73 289 246, n = 5
+N80 = 34 601 858, n = 7
+N90 = 34 215 203, n = 8
+N100 = 7, n = 1553
+N_count = 86258
+Gaps = 241
+
+2n = 14, so n=7
+
+Genome size: 800-1000 Mbp
+
+#--------------------------------
+# save copy
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/
+
+cp -v /home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding/Oxy_dig_1.scaffolds_FINAL.fasta .
+cp -v /home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding/Oxy_dig_1.salsa_scaffolds.hic .
+
+#--------------------------
+# copy to computer
+
+cd /home/Owner/Desktop
+
+scp -v celphin@cedar.computecanada.ca:/home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding/Oxy_dig_1.salsa_scaffolds.hic .
+scp -v celphin@cedar.computecanada.ca:/home/celphin/scratch/Hi-C_scaffold/Oxy_hic_scaffolding/Oxy_dig_1.scaffolds_FINAL.fasta .
+
+
+#------------------
+# look at Juicebox results
+
+# https://github.com/aidenlab/Juicebox/wiki
+# https://aidenlab.org/juicebox/
+
+#-----------------------
+# BUSCO
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/
+
+mkdir BUSCO
+
+tmux new-session -s Oxy
+tmux attach-session -t Oxy
+
+salloc -c10 --time 4:55:00 --mem 120000m --account def-cronk
+
+module load StdEnv/2020 gcc python augustus hmmer blast+ metaeuk prodigal r
+source /project/6019339/celphin/Cannabis/busco_env/
+
+cd /home/celphin/projects/def-henryg/celphin/Oxyria/BUSCO/
+
+busco --offline --in /home/celphin/projects/def-henryg/celphin/Oxyria/Oxy_dig_1.scaffolds_FINAL.fasta \
+--out BUSCO_eudicots --lineage_dataset eudicots_odb10 --mode genome --cpu 10 \
+--download_path /project/6019339/celphin/Cannabis/BUSCO_downloads/BUSCO_downloads/
+
+ --------------------------------------------------
+        |Results from dataset eudicots_odb10              |
+        --------------------------------------------------
+        |C:93.4%[S:85.2%,D:8.2%],F:1.8%,M:4.8%,n:2326     |
+        |2171   Complete BUSCOs (C)                       |
+        |1981   Complete and single-copy BUSCOs (S)       |
+        |190    Complete and duplicated BUSCOs (D)        |
+        |43     Fragmented BUSCOs (F)                     |
+        |112    Missing BUSCOs (M)                        |
+        |2326   Total BUSCO groups searched               |
+        --------------------------------------------------
+
+#--------------------------
+# K-mer analysis
+
+
+
+
+
+
+
+
+
+
