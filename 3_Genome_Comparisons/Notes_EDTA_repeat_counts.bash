@@ -250,6 +250,66 @@ mkdir Draba_nivalis; cd Draba_nivalis
 # wget https://datadryad.org/stash/downloads/file_stream/403400
 
 #####################################
+# Install EDTA
+
+# install miniconda
+curl "https://repo.anaconda.com/miniconda/Miniconda2-latest-Linux-x86_64.sh" -o miniconda.sh
+ #follow prompts
+ #when asked to modify ~/bashrc  say 'no'
+chmod +x miniconda.sh
+
+~/miniconda.sh
+
+Do you accept the license terms? [yes|no]
+[no] >>>
+Please answer 'yes' or 'no': yes
+
+Miniconda2 will now be installed into this location:
+/home/celphin/miniconda2
+
+  - Press ENTER to confirm the location
+  - Press CTRL-C to abort the installation
+  - Or specify a different location below
+#press enter
+
+
+rm miniconda.sh
+~/miniconda2/bin/conda
+
+#-----------------------
+# Install EDTA environment
+
+#Conda environment set up 
+~/miniconda2/bin/conda info --envs
+cd ~/scratch/Annotation/EDTA
+
+#----------------
+# activate base environment
+source ~/miniconda2/bin/activate
+
+# update conda
+conda update -n base -c defaults conda
+# Your installed version is: 2.17
+
+# install EDTA
+conda env create -f EDTA.yml
+Your installed version is: 2.17
+#install EDTA (CHECK FILE NAME OF .yml file)    
+    #Trouble shooting note: 
+        #depending on updates might require miniconda redownload
+        #Works with Original EDTA.yml file, available in this repo 
+conda env create -n EDTA -f  EDTA.yml
+#to remove and reinstall: conda remove --name EDTA --all
+
+########################
+
+# you can open this environment here
+source ~/miniconda2/bin/activate EDTA
+# to escape
+# conda deactivate
+
+
+#-----------------------
 # Fix repeatmasker dependancy 
 cd ~/scratch/Annotation/RepeatMasker/RepeatMasker
 
