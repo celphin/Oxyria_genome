@@ -1,5 +1,6 @@
 ########################################################################################
-#Installation of BUSCO version 5.1.2 and according databases to Alliance Canada clusters
+# Installation of BUSCO version 5.1.2 and according databases to Alliance Canada clusters
+# Run on rorqual
 ########################################################################################
 #Install Busco
 cd ~
@@ -13,7 +14,7 @@ virtualenv ~/busco_env
 
 source ~/busco_env/bin/activate
 
-pip install biopython pandas busco==5.1.2 --no-index
+pip install biopython pandas busco==6.0.0 --no-index
 
 # to close
 deactivate
@@ -37,41 +38,46 @@ cd ~
 mkdir BUSCO_downloads; cd BUSCO_downloads
 
 mkdir lineages; cd lineages
-wget https://busco-data.ezlab.org/v5/data/lineages/viridiplantae_odb10.2020-09-10.tar.gz
-wget https://busco-data.ezlab.org/v5/data/lineages/eudicots_odb10.2020-09-10.tar.gz
-wget https://busco-data.ezlab.org/v5/data/lineages/embryophyta_odb10.2020-09-10.tar.gz
-wget https://busco-data.ezlab.org/v5/data/lineages/eukaryota_odb10.2024-01-08.tar.gz
-wget https://busco-data.ezlab.org/v5/data/lineages/stramenopiles_odb10.2024-01-08.tar.gz
+wget https://busco-data.ezlab.org/v5/data/lineages/eukaryota_odb12.2025-07-01.tar.gz
+wget https://busco-data.ezlab.org/v5/data/lineages/vertebrata_odb12.2025-07-01.tar.gz
+wget https://busco-data.ezlab.org/v5/data/lineages/aves_odb12.2025-07-01.tar.gz
+wget https://busco-data.ezlab.org/v5/data/lineages/mammalia_odb12.2025-07-01.tar.gz
+wget https://busco-data.ezlab.org/v5/data/lineages/embryophyta_odb12.2025-07-01.tar.gz
+wget https://busco-data.ezlab.org/v5/data/lineages/viridiplantae_odb12.2025-07-01.tar.gz
 cd ..
 
 mkdir information; cd information
-wget https://busco-data.ezlab.org/v5/data/information/lineages_list.2021-12-14.txt.tar.gz
+wget https://busco-data.ezlab.org/v5/data/information/lineages_list.2025-04-09.txt.tar.gz
+
 cd ..
 mkdir placement_files; cd placement_files
-wget https://busco-data.ezlab.org/v5/data/placement_files/list_of_reference_markers.eukaryota_odb10.2019-12-16.txt.tar.gz
-wget https://busco-data.ezlab.org/v5/data/placement_files/mapping_taxid-lineage.eukaryota_odb10.2019-12-16.txt.tar.gz
-wget https://busco-data.ezlab.org/v5/data/placement_files/mapping_taxids-busco_dataset_name.eukaryota_odb10.2019-12-16.txt.tar.gz
-wget https://busco-data.ezlab.org/v5/data/placement_files/supermatrix.aln.eukaryota_odb10.2019-12-16.faa.tar.gz
-wget https://busco-data.ezlab.org/v5/data/placement_files/tree.eukaryota_odb10.2019-12-16.nwk.tar.gz
-wget https://busco-data.ezlab.org/v5/data/placement_files/tree_metadata.eukaryota_odb10.2019-12-16.txt.tar.gz
-cd..
+wget https://busco-data.ezlab.org/v5/data/placement_files/list_of_reference_markers.eukaryota_odb12.2025-01-15.txt.tar.gz
+wget https://busco-data.ezlab.org/v5/data/placement_files/mapping_taxid-lineage.eukaryota_odb12.2025-01-15.txt.tar.gz
+wget https://busco-data.ezlab.org/v5/data/placement_files/mapping_taxids-busco_dataset_name.eukaryota_odb12.2025-01-15.txt.tar.gz
+wget https://busco-data.ezlab.org/v5/data/placement_files/supermatrix.aln.eukaryota_odb12.2025-01-15.faa.tar.gz
+wget https://busco-data.ezlab.org/v5/data/placement_files/tree.eukaryota_odb12.2025-01-15.nwk.tar.gz
+wget https://busco-data.ezlab.org/v5/data/placement_files/tree_metadata.eukaryota_odb12.2025-01-15.txt.tar.gz
 
+cd ..
 cd lineages
-tar -xvf ./viridiplantae_odb10.2020-09-10.tar.gz
-tar -xvf ./eudicots_odb10.2020-09-10.tar.gz
-tar -xvf ./embryophyta_odb10.2020-09-10.tar.gz
-tar -xvf ./eukaryota_odb10.2024-01-08.tar.gz
-tar -xvf ./stramenopiles_odb10.2024-01-08.tar.gz
+tar -xvf ./eukaryota_odb12.2025-07-01.tar.gz
+tar -xvf ./vertebrata_odb12.2025-07-01.tar.gz
+tar -xvf ./aves_odb12.2025-07-01.tar.gz
+tar -xvf ./mammalia_odb12.2025-07-01.tar.gz
+tar -xvf ./embryophyta_odb12.2025-07-01.tar.gz
+tar -xvf ./viridiplantae_odb12.2025-07-01.tar.gz
+
 cd ..
 cd information
-tar -xvf ./lineages_list.2021-12-14.txt.tar.gz
+tar -xvf ./lineages_list.2025-04-09.txt.tar.gz
+
 cd ..
 cd placement_files
-tar -xvf ./list_of_reference_markers.eukaryota_odb10.2019-12-16.txt.tar.gz
-tar -xvf ./mapping_taxid-lineage.eukaryota_odb10.2019-12-16.txt.tar.gz
-tar -xvf ./mapping_taxids-busco_dataset_name.eukaryota_odb10.2019-12-16.txt.tar.gz
-tar -xvf ./supermatrix.aln.eukaryota_odb10.2019-12-16.faa.tar.gz
-tar -xvf ./tree.eukaryota_odb10.2019-12-16.nwk.tar.gz
-tar -xvf ./tree_metadata.eukaryota_odb10.2019-12-16.txt.tar.gz
+tar -xvf ./list_of_reference_markers.eukaryota_odb12.2025-01-15.txt.tar.gz
+tar -xvf ./mapping_taxid-lineage.eukaryota_odb12.2025-01-15.txt.tar.gz
+tar -xvf ./mapping_taxids-busco_dataset_name.eukaryota_odb12.2025-01-15.txt.tar.gz
+tar -xvf ./supermatrix.aln.eukaryota_odb12.2025-01-15.faa.tar.gz
+tar -xvf ./tree.eukaryota_odb12.2025-01-15.nwk.tar.gz
+tar -xvf ./tree_metadata.eukaryota_odb12.2025-01-15.txt.tar.gz
 
 cd ..
