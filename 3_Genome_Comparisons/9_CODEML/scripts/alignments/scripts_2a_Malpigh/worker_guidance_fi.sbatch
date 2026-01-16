@@ -1,0 +1,44 @@
+#!/bin/bash
+# Project:COLD 
+#SBATCH --account=nn9370k
+# Wall clock limit:
+#SBATCH --time=48:00:00
+#SBATCH --mem-per-cpu=5G
+#SBATCH --cpus-per-task=3
+source /cluster/bin/jobsetup
+module purge   # clear any inherited modules
+set -o errexit # exit on errors
+
+#module loading
+module load ruby
+module load perlmodules
+module load prank
+
+#make directories
+#mkdir FASTAS_Guidance_Edits 
+#mkdir MSA_Scores_Guidance
+#mkdir Seq_Scores_Guidance
+
+# Define directory 
+#$DIR=/usit/abel/u1/siribi/nobackup/COLD/GUIDANCE/nucleotide_tests/SMALL_ARRAY_RUN
+
+# Run Guidance and copy files back
+cd dir.$TASK_ID
+FALIST=`ls -1 *.fasta`
+i=1
+for FAFILE in $FALIST
+        do
+        FILEBASE=$(echo $FAFILE | cut -f1 -d.)
+        echo $FILEBASE
+        if perl /usit/abel/u1/siribi/nobackup/programs/guidance.v2.02/www/Guidance/guidance.pl --seqFile $FILEBASE.fasta --seqType codon --msaProgram PRANK --bootstraps 10 --outDir $SUBMITDIR/dir.$TASK_ID/$FILEBASE.guidance.out --outOrder as_input --proc_num 3 | grep -m 1 "ERROR"; then
+		continue
+	fi			
+        cd $FILEBASE.guidance.out/
+        mv MSA.PRANK.Without_low_SP_Col.With_Names $FILEBASE.guidance.edit.fasta
+        cp $FILEBASE.guidance.edit.fasta ../../FASTAS_Guidance_Edits 
+        mv MSA.PRANK.Guidance2_msa.scr $FILEBASE.MSA.PRANK.Guidance2_msa.scr 
+        cp $FILEBASE.MSA.PRANK.Guidance2_msa.scr ../../MSA_Scores_Guidance
+        mv MSA.PRANK.Guidance2_res_pair_seq.scr_with_Names $FILEBASE.MSA.PRANK.Guidance2_res_pair_seq.scr_with_Names
+        cp $FILEBASE.MSA.PRANK.Guidance2_res_pair_seq.scr_with_Names ../../Seq_Scores_Guidance
+        cd ..
+        done

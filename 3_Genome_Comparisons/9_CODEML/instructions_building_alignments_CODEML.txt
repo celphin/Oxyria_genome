@@ -1,0 +1,96 @@
+###MAKING ALIGNMENTS FOR CODEML###
+There is one script directory for each species group (Cardamine, Cochlearia and Draba). 
+They contain the same scripts, but some of the scripts contain species specific names, so I made one for each group.  
+
+First part of the pipeline involves calculating protein distance between all genes in an orthogroup using the distmat algorithm in EMBOSS.
+To do this we need to prepare the input files using three scripts: The main script called "distmat_prep.sbatch" which needs two python scripts called "MAFFTprep_allOrthogroup.py"
+and "sort_gene_of_interest_v8.py". 
+
+The "MAFFTprep_allOrthogroups.py" uses a set of orthogroup index files (files that contains all the gene names in an orthogroup) 
+to collect all orthogroup sequences from a concatenated fasta into a orthogroup fasta. 
+sort_gene_of_interest_v8.py: The pipeline divides large orthogroups into subgroups based on protein distance. It does this by defining one species of interest,
+and sorting all gene copies of that species in a certain orthogroup into a separate file together with all other gene sequences from the orthogroup.
+
+This script sorts each of the orthogroup fasta files
+
+
+
+###Preparation of input files: Cocatenated fastas and a set of files with gene identifiers made from  the Orthogroups.txt file 
+1.Making each line of the Orthogroups.txt into a separate file
+	Copy Orthofasta.tsv and the appropriate scripts_2a* library for the species to the PARENT directory
+	Change $PARENT path in make_indexfiles_from_orthogroups.sh and run it  
+2.Concatenate fastas (both amino acid and cds files) 
+	make one directory with all the cds and one directory with all the aa files. Concatenate them into one file. 
+	cat *.fasta > CladeB_Draba_concat.pep 
+3. Running distmat_prep.sbatch (in the scripts directory)
+First part of the pipeline involves calculating protein distance between all genes in an orthogroup using the distmat algorithm in EMBOSS. 
+To do this we need to prepare the input files using three scripts: The main script "distmat_prep.sbatch" needs two python scripts called MAFFTprep_allOrthogroups.py
+and sort_gene_of_interest_v8.py.
+ 
+MAFFTprep_allOrthogroups.py: This script uses the index files we generated above to collect all orthogroup sequences (from the concatenated fasta) into a fasta file. 
+sort_gene_of_interest_v8.py: The pipeline divides large orthogroups into subgroups based on protein distance. It does this by defining one species of interest,
+and sorting all gene copies of that species in a certain orthogroup into a separate file together with all other gene sequences from the orthogroup.  
+ 
+This script sorts each of the orthogroup fasta files   
+
+###NB: I NEED TO CHANGE THE MAKE DIRECTORIES SCRIPT TO BETTER FIT SAGA 
+Remember to:
+	Change	$PARENT	and $SCRIPTS in	distmat_prep.sbatch AND:
+	Change A: "path", B: "paths", C: "fdna" and D: "pahti" in  MAFFTprep_allOrthogroups.py (fdna is the concatenated peptide file)
+	Change A: "path" and B: "pattern" in sort_gene_of_interest_v8.py
+
+###Run an array run of distmat! 
+	Change the number of directories in the submit script
+	Make distmat directory ($DISTMAT_OUT)
+	Change $DISTMAT_OUT in the worker script
+
+###Next step is to build new files with only one gene copy for each species (based on distance).
+	Run this script: make_files_for_guidance.sbatch
+	In this script, remember to Change directory paths "PARENT" "SCRIPTS" and "DISTMAT" and the grep_and_transpose_*.sh script
+	In GUIDANCE_prep.py Change "path", "paths", "fdna" and "pahti" (fnda is the concatenated cds file)
+
+###Run Guidance
+	Copy new fasta files from single_copy_orthofasta to new directory. Divide into directories (50 files in each). 
+
+	i=0; 
+	for f in *; 
+	do 
+    		d=dir.$(printf %03d $((i/50+1))); 
+    		mkdir -p $d; 
+    		mv "$f" $d; 
+    		let i++; 
+	done
+
+	Make directories FASTAS_Guidance_Edits, MSA_Scores_Guidance and Seq_Scores_Guidance
+	Run submit_guidance.sbatch and worker_guidance_fi.sbatch
+	Note 1: I have experienced that Guidance errors out on predicted genes from genome cds, so I have run such files through Transdecoder first. 
+	Note 2: This run requires a lot of space. Consider running it in the work directory. 
+
+### Prepping for codeml after guidance run: 
+Run detect_lower.py in the Seq_Scores_Guidance, to get a list (badseqscores.txt) of alignments containing sequences with scores less than 0.6. #module load python2/2.7.10.gnu  
+#adding file extentions to badseqscores.txt
+	sed -i 's/$/\.guidance.edit.fasta/' ./badseqscores.txt 
+#In directory with FASTAS_Guidance_Edits, move list of bad seq scores to new directory
+cat badseqscores.txt | xargs mv -t badseqscores/
+
+### If needed, remove alignment containing gaps and internal stop codons (this should actually be done beforehand though...)
+#Here I made a list of sequences in Arabis alpina and Cardamine hirsuta that contained Ns (and also one for internal STOP codons)
+#Use this file for the next steps (Remember to remove e.g. > with  sed -i 's/>//g')
+#Grepping for files with gaps and stop-codons and feeding them into a file:
+grep -f Aalp_sequences_with_gaps_EDIT2.file *.fasta >> Guidance_edit_files_with_Aalp.file
+# Delete everything after : in Guidance_edit_files_with_Aalp.file
+sed 's/:.*//g' Guidance_edit_files_with_Aalp.file >> List_of_files_with_Aalp_gaps.file
+cat List_of_files_with_Aalp_gaps.file | xargs mv -t Aalp_GAPS/
+
+
+### In directory where you want to run Codeml, copy over FASTAS_Guidance_Edits and the scripts directory of interest
+### All the scripts directories should be ok now, but if needed it's easy to transform codeml_prep.sbatch for Cochlearia with a series of sed -i 's///g' commands!
+#e.g. sed -i 's/Bulk_run_Draba.tree/Bulk_run_Cochlearia.tree/g' codeml_prep_Cochlearia.sbatch
+### Remember to change PARENT and SCRIPTS directories in codeml_prep.sbatch
+### The script codeml_prep.sbatch makes all necessary files and directories to run all models of CODEML.
+### To run the controls, you only need to change the tree file :)  
+
+###Run each model! 
+###You need to cd into the model-run directory and change the worker and submit script. 
+#In the worker script copy the path of the mlc-output directory (one directory up), and insert the path to the model directory (where you have all the directories).
+#In the submit script you need to change the number of directories. 
