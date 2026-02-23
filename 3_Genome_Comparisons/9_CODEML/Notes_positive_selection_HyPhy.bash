@@ -14,84 +14,431 @@
 # Explore results
 
 ######################
+# Narval2
+tmux attach-session -t total
 
 # Load modules
-module load cufflinks/2.2.1 
-module load cdbfasta/2017-03-16
-module load orthofinder/2.5.2 
-module load diamond/2.0.4 
-module load clustalo/1.2.4
-module load pal2nal.v14 
-module load paml/4.9h
+module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
 
 ##########################
-# label Arctic branches as foreground in species tree
+# label Arctic branches as foreground in each gene tree
+# ((A,B{Foreground}),C,(D,E{Foreground}));
 
-((A,B{foreground}),C,(D,E{foreground}));
+# check tree formats
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
+more OG0011565_tree.txt
 
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Species_Tree
+# (((((((TAV2_LOCUS4956:0.073246,
+# g11872.t1:0.137256):0.004606,
+# 106302034:0.077317):0.039058,(
+# LOC17883196:0.049298,
+# LOC9310397:0.078487):0.06136):0.021773,
+# maker-lg2-snap-gene-43.209-mRNA-1:0.22099):0.06837,
+# g18107.t1:0.296852):0.343242,(((
+# LOC133722319:0.036233,(
+# 101294573:0.037006,
+# LOC126799020:0.08705):0.007216):0.232907,
+# DoctH0_Chr600000802:0.12274):0.007824,((
+# LOC125470047:0.016387,
+# LOC126593297:0.006243):0.144526,
+# LOC18773133:0.102506):0.061272):0.228821):0.100199,(((((
+# RtaG0011728.1:3.23998e-06,
+# RtaG0015792.1:0.003127):0.000655,
+# RnoG0007103.1:0.002416):0.026212,
+# Polavi_Chr600001874:0.061237):0.033667,
+# Oxyria_NCBI_Chr700002490:0.203675):0.010222,(
+# FT01Gene17735.t1:0.017668,
+# FEHAP213745.t1:0.0169):0.101281):0.100199);
 
-# Node labels
-(((Fagopyrum_escelentum_H2:0.0377569,Fagopyrum_tataricum_H1:0.0354292)N3:0.10263
-9,(Polygunum_aviculare_H0:0.156221,((Rheum_nobile_H0:0.035189,Rheum_tangaticum_H
-0:0.0440871)N11:0.0634952,Oxyria_digyna_H1:0.136143)N7:0.0338668)N4:0.0351737)N1
-:0.093076,(((Rosa_rugosa:0.0478462,(Fragaria_vesca:0.0593422,Argentina_anserina:
-0.076546)N12:0.0183635)N8:0.0789374,(Dryas_octopetala:0.142376,(Prunus_persica:0
-.0787626,(Malus_sylvestris:0.0169615,Pyrus_bretschneideri:0.0188564)N16:0.080969
-9)N13:0.0316866)N9:0.0295128)N5:0.115343,(Cochlearia_groenlandica:0.121011,((((A
-rabidopsis_lyrata:0.022788,Arabidopsis_thaliana:0.0793045)N19:0.0265357,Capsella
-_rubella:0.0514998)N17:0.0309554,(Arabis_alpina:0.0831942,Draba_nivalis:0.085671
-7)N18:0.0322681)N14:0.0134594,(Thlaspi_arvense:0.102948,Brassica_oleracea:0.0829
-899)N15:0.0188365)N10:0.0265485)N6:0.207906)N2:0.093076)N0;
+#-----------------------------------
+# Check gene  names for Arctic species
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/genomes/
+grep ">" Dryas_octopetala.f*
+# Dryas_octopetala.fna:>DoctH0_Chr1000000308-RA
+# Dryas_octopetala.fna:>DoctH0_Chr1000000309-RA
+# Dryas_octopetala.fna:>DoctH0_Chr1000000312-RA
+# Dryas_octopetala.fna:>DoctH0_Chr1000000315-RA
+# Dryas_octopetala.fna:>DoctH0_Chr1000000316-RA
 
-# No node labels
-(((Fagopyrum_escelentum_H2:0.0377569,Fagopyrum_tataricum_H1:0.0354292)0.973441:0
-.102639,(Polygunum_aviculare_H0:0.156221,((Rheum_nobile_H0:0.035189,Rheum_tangat
-icum_H0:0.0440871)0.880931:0.0634952,Oxyria_digyna_H1:0.136143)0.593853:0.033866
-8)0.56789:0.0351737)0.966876:0.093076,(((Rosa_rugosa:0.0478462,(Fragaria_vesca:0
-.0593422,Argentina_anserina:0.076546)0.504625:0.0183635)0.958221:0.0789374,(Drya
-s_octopetala:0.142376,(Prunus_persica:0.0787626,(Malus_sylvestris:0.0169615,Pyru
-s_bretschneideri:0.0188564)0.982393:0.0809699)0.714115:0.0316866)0.626082:0.0295
-128)0.961504:0.115343,(Cochlearia_groenlandica:0.121011,((((Arabidopsis_lyrata:0
-.022788,Arabidopsis_thaliana:0.0793045)0.80185:0.0265357,Capsella_rubella:0.0514
-998)0.797672:0.0309554,(Arabis_alpina:0.0831942,Draba_nivalis:0.0856717)0.719188
-:0.0322681)0.183229:0.0134594,(Thlaspi_arvense:0.102948,Brassica_oleracea:0.0829
-899)0.281409:0.0188365)0.289466:0.0265485)0.965085:0.207906)0.966876:0.093076);
+grep ">" Draba_nivalis.f*
+# Draba_nivalis.fna:>snap_masked-lg7-processed-gene-95.56-mRNA-1 transcript offset:0 AED:0.44 eAED:0.44 QI:0|-1|0|1|-1|1|1|0|300
+# Draba_nivalis.fna:>maker-lg7-snap-gene-95.218-mRNA-1 transcript offset:0 AED:0.44 eAED:0.45 QI:0|0|0|1|0.5|0.66|3|0|334
+# Draba_nivalis.fna:>snap_masked-lg7-processed-gene-95.97-mRNA-1 transcript offset:0 AED:0.44 eAED:0.45 QI:0|-1|0|1|-1|1|1|0|307
+# Draba_nivalis.fna:>snap_masked-lg7-processed-gene-95.98-mRNA-1 transcript offset:72 AED:0.46 eAED:0.46 QI:72|0.5|0.33|1|1|1|3|0|111
+# Draba_nivalis.fna:>maker-lg7-snap-gene-95.230-mRNA-1 transcript offset:75 AED:0.47 eAED:0.47 QI:75|1|1|1|1|1|4|248|101
+# Draba_nivalis.fna:>snap_masked-lg7-processed-gene-95.55-mRNA-1 transcript offset:0 AED:0.47 eAED:0.47 QI:0|-1|0|1|-1|1|1|0|141
+# Draba_nivalis.fna:>snap_masked-lg7-processed-gene-95.69-mRNA-1 transcript offset:0 AED:0.51 eAED:0.53 QI:0|0|0|0.75|1|1|4|0|645
+# Draba_nivalis.fna:>snap_masked-lg7-processed-gene-95.91-mRNA-1 transcript offset:0 AED:0.58 eAED:0.58 QI:0|-1|0|1|-1|1|1|0|192
 
+grep ">" Oxyria_digyna_H1.f*
+# Oxyria_digyna_H1.fna:>Oxyria_NCBI_Chr300003907-RA
+# Oxyria_digyna_H1.fna:>Oxyria_NCBI_Chr300003908-RA
+# Oxyria_digyna_H1.fna:>Oxyria_NCBI_Chr300003909-RA
+# Oxyria_digyna_H1.fna:>Oxyria_NCBI_Chr300003910-RA
+# Oxyria_digyna_H1.fna:>Oxyria_NCBI_Chr300003911-RA
+
+grep ">" Cochlearia_groenlandica.f*
+# Cochlearia_groenlandica.fna:> g2528.t1
+# Cochlearia_groenlandica.fna:> g2529.t1
+# Cochlearia_groenlandica.fna:> g2530.t1
+# Cochlearia_groenlandica.fa:>g6166.t1
+# Cochlearia_groenlandica.fa:>g6167.t1
+# Cochlearia_groenlandica.fa:>g6168.t1
+# Cochlearia_groenlandica.fa:>g6169.t1
+# Cochlearia_groenlandica.fa:>g6170.t1
+
+
+
+#------------------------------------
+# Add {Foreground} label to Arctic branches
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
+
+# test
+sed -E 's/(DoctH0_Chr[^:(),]+)(:)/\1{Foreground}\2/g' OG0011565_tree.txt
+
+sed -E '
+   s/(DoctH0_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
+   s/(Oxyria_NCBI_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
+   s/((maker|snap_masked)-[^:(),]+)(:)/\1{Foreground}\3/g;
+   s/(g[0-9]+\.t[0-9]+)(:)/\1{Foreground}\2/g
+   ' OG0011565_tree.txt
+
+# (((((((TAV2_LOCUS4956:0.073246,
+# g11872.t1{Foreground}:0.137256):0.004606,
+# 106302034:0.077317):0.039058,(
+# LOC17883196:0.049298,
+# LOC9310397:0.078487):0.06136):0.021773,
+# maker-lg2-snap-gene-43.209-mRNA-1{Foreground}:0.22099):0.06837,
+# g18107.t1{Foreground}:0.296852):0.343242,(((
+# LOC133722319:0.036233,(
+# 101294573:0.037006,
+# LOC126799020:0.08705):0.007216):0.232907,
+# DoctH0_Chr600000802{Foreground}:0.12274):0.007824,((
+# LOC125470047:0.016387,
+# LOC126593297:0.006243):0.144526,
+# LOC18773133:0.102506):0.061272):0.228821):0.100199,(((((
+# RtaG0011728.1:3.23998e-06,
+# RtaG0015792.1:0.003127):0.000655,
+# RnoG0007103.1:0.002416):0.026212,
+# Polavi_Chr600001874:0.061237):0.033667,
+# Oxyria_NCBI_Chr700002490{Foreground}:0.203675):0.010222,(
+# FT01Gene17735.t1:0.017668,
+# FEHAP213745.t1:0.0169):0.101281):0.100199);
+
+#------------------------
+# run for all
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
+
+for f in *tree.txt
+do
+    # Check if tree contains at least one Arctic gene
+    if grep -Eq 'DoctH0_Chr|Oxyria_NCBI_Chr|maker-|snap_masked-|g[0-9]+\.t[0-9]+' "$f"
+    then
+        sed -E '
+        s/(DoctH0_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
+        s/(Oxyria_NCBI_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
+        s/((maker|snap_masked)-[^:(),]+)(:)/\1{Foreground}\3/g;
+        s/(g[0-9]+\.t[0-9]+)(:)/\1{Foreground}\2/g
+        ' "$f" > "${f}_HyPhy.txt"
+    fi
+done
+
+ls *_HyPhy.txt | wc -l
+#19,152
+
+#########################
+# Move only those trees and data with Arctic species to new folder
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
+
+mkdir -p Arctic_trees
+
+for f in *_HyPhy.txt
+do
+    base=${f%_HyPhy.txt}
+    mv ${base}* Arctic_trees/
+done
+
+# check
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
+ls *_HyPhy.txt | wc -l
+# 0 
+ls *_tree.txt | wc -l
+# 3993
+
+grep "Doct" *_tree.txt
+# none
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+ls *_HyPhy.txt | wc -l
+# 19152
+ls *_tree.txt | wc -l
+# 19152
+
+########################
+# Run remove duplicates script test
+#  download script
+
+module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
+
+wget https://raw.githubusercontent.com/veg/hyphy-analyses/master/remove-duplicates/remove-duplicates.bf
+chmod +x remove-duplicates.bf
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+# test
+hyphy remove-duplicates.bf --msa OG0011565_tree.txt_pal2nal.fasta --tree OG0011565_tree.txt_HyPhy.txt --output OG0011565_tree.txt_unique.nxh
 
 #####################
-# Run absrel
+# Run absrel test
+# https://hyphy.org/tutorials/CL-prompt-tutorial/
+# Enter 1 for "Selection Analyses", and then 6 for "aBSREL"
+# Enter 1 to select the Universal genetic code.
+# Select a coding sequence alignment file: 
 
-hyphy absrel \
-  --alignment geneX.codon.aln \
-  --tree geneX.treefile
-  
-  
-# should I use the gene tree or the species tree here?
+#---------------
+# Automatic command line test
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+hyphy absrel  --alignment OG0011565_tree.txt_unique.nxh --branches FOREGROUND
+# * DOCTH0_CHR600000802, p-value =  0.01770
+# * DOCTH0_CHR600000802, p-value =  0.00557 # with foreground
+
+hyphy relax  --alignment OG0011565_tree.txt_unique.nxh --branches FOREGROUND
+# Check errors.log for execution error details.
+
+
+##################################
+# loop through orthogroups that include Arctic spp 
+# run as slurm array
+
+# get file list of non empty files
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+mkdir -p logs
+
+for f in *_tree.txt; do
+    msa="${f}_pal2nal.fasta"
+    tree="${f}_HyPhy.txt"
+
+    # Require both files
+    [[ -f "$msa" && -f "$tree" ]] || continue
+
+    # Require at least 2 sequences
+    seq_count=$(grep -c "^>" "$msa")
+    [[ $seq_count -ge 2 ]] || continue
+
+    # Skip zero-length sequences (ignoring gaps)
+    if awk '
+        /^>/ {
+            if (seq_len == 0 && NR > 1) exit 1
+            seq_len = 0
+            next
+        }
+        { gsub("-", ""); seq_len += length($0) }
+        END { if (seq_len == 0) exit 1 }
+    ' "$msa"
+    then
+        echo "$f"
+    fi
+
+done > filtered_tree_list.txt
+
+# check count
+wc -l filtered_tree_list.txt
+# 16401 filtered_tree_list.txt
+
+#--------------------------
+# check commands
+hyphy absrel --help
+
+wc -l  filtered_tree_list.txt
+#16401
+
+# check max array size: 
+ sacctmgr show assoc user=$USER format=User,Account,MaxSubmitJobs
+      # User    Account MaxSubmit
+# ---------- ---------- ---------
+   # celphin def-cronk+      1000
+   # celphin def-cronk+      1000
+   # celphin def-henry+      1000
+   # celphin def-henry+      1000
+   # celphin def-nbl_c+      1000
+   # celphin def-nbl_g+      1000
+   # celphin def-riese+      1000
+   # celphin def-riese+      1000
+
+# use nano to import text
+cat << EOF > absrel_array.sh
+#!/bin/bash
+#SBATCH --account=def-henryg
+#SBATCH --time=0-12:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --mem=32G
+#SBATCH --output=logs/absrel_%A_%a.out
+#SBATCH --error=logs/absrel_%A_%a.err
+
+module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 hyphy/2.5.49
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+CHUNK=20
+
+START=$(( (SLURM_ARRAY_TASK_ID - 1) * CHUNK + 1 ))
+END=$(( START + CHUNK - 1 ))
+
+TOTAL=$(wc -l < filtered_tree_list.txt)
+
+if [ $END -gt $TOTAL ]; then
+    END=$TOTAL
+fi
+
+echo "Processing lines $START to $END"
+
+sed -n "${START},${END}p" filtered_tree_list.txt | while read f
+do
+    echo "Processing $f"
+
+    msa="${f}_pal2nal.fasta"
+    tree="${f}_HyPhy.txt"
+    output="${f}_unique.nxh"
+
+    if [[ -f "$output" ]]; then
+        echo "Output exists for $f — skipping"
+        continue
+    fi
+
+    hyphy remove-duplicates.bf \
+        --msa "$msa" \
+        --tree "$tree" \
+        --output "$output"
+
+    hyphy absrel \
+        --alignment "$output" \
+        --branches FOREGROUND
+
+    echo "Finished $f"
+done
+
+EOF
+
+chmod +x absrel_array.sh
+dos2unix absrel_array.sh
+
+sbatch --array=1-850%100 absrel_array.sh
+
+ls *nxh
+ls *json
 
 
 
 
+#-----------------------------
+# OR Run each orthogroup in a new bash script of its own
 
+for f in *_tree.txt; do
+cat << EOF > absrel_${f}.sh
+#!/bin/bash
+#SBATCH --account=def-rieseber
+#SBATCH --time=0-01:30:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=5
+#SBATCH --mem=18G
 
+module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
 
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
-#######################
-# RELAX info
+hyphy remove-duplicates.bf --msa "${f}_pal2nal.fasta" --tree "${f}_HyPhy.txt" --output "${f}_unique.nxh"
+hyphy absrel --alignment "${f}_unique.nxh\"
+#hyphy relax --alignment "${f}_unique.nxh"
 
-###############################
-# Prepare files and run RELAX
+EOF
 
+chmod +x absrel_${f}.sh
+sbatch absrel_${f}.sh
+
+done 
 
 
 ###############################
 # Checking results
 
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+ls *ABSREL.json | wc -l
+# 697
+
+##########################
 # Which orthogroups are demonstrating positive selection
 
+# look for found **1** branches under selection among **39** tested
+
+for f in *ABSREL.json; do
+  jq -r --arg file "$f" \
+    '$file + "\t" + (.["test results"]["positive test results"]|tostring) + "\t" + (.["test results"].tested|tostring)' "$f"
+done >> Total_ABSREL_results.txt
+
+wc -l Total_ABSREL_results.txt
+#660 Total_ABSREL_results.txt
+
+# filter for only those with positive selection
+awk '$2 != 0' Total_ABSREL_results.txt | sort -k2,2nr > ABSREL_nonzero_sorted.txt
+
+wc -l ABSREL_nonzero_sorted.txt
+# 122 ABSREL_nonzero_sorted.txt
+
+more ABSREL_nonzero_sorted.txt
+
+# OG0001467_tree.txt_unique.nxh.ABSREL.json       3       12
+# OG0000896_tree.txt_unique.nxh.ABSREL.json       2       12
+# OG0000969_tree.txt_unique.nxh.ABSREL.json       2       15
+# OG0001431_tree.txt_unique.nxh.ABSREL.json       2       12
+# OG0001556_tree.txt_unique.nxh.ABSREL.json       2       12
+# OG0001639_tree.txt_unique.nxh.ABSREL.json       2       11
+# OG0001824_tree.txt_unique.nxh.ABSREL.json       2       8
+# OG0001922_tree.txt_unique.nxh.ABSREL.json       2       10
+# OG0001967_tree.txt_unique.nxh.ABSREL.json       2       11
+# OG0001999_tree.txt_unique.nxh.ABSREL.json       2       41
+# OG0002560_tree.txt_unique.nxh.ABSREL.json       2       13
+# OG0002614_tree.txt_unique.nxh.ABSREL.json       2       10
+# OG0002617_tree.txt_unique.nxh.ABSREL.json       2       8
+# OG0002655_tree.txt_unique.nxh.ABSREL.json       2       8
+# OG0002767_tree.txt_unique.nxh.ABSREL.json       2       9
+# OG0002848_tree.txt_unique.nxh.ABSREL.json       2       8
+# OG0002869_tree.txt_unique.nxh.ABSREL.json       2       9
+
+more OG0001467_tree.txt_unique.nxh.ABSREL.json
+     # "DOCTH0_CHR100000472":"test",
+     # "DOCTH0_CHR600001113":"test",
+     # "G10838_T1":"test",
+     # "G21743_T1":"test",
+     # "G29482_T1":"test",
+     # "MAKER_LG2_SNAP_GENE_0_246_MRNA_1":"test",
+     # "MAKER_LG6_SNAP_GENE_73_102_MRNA_1":"test",
+     # "OXYRIA_NCBI_CHR300002584":"test",
+     # "OXYRIA_NCBI_CHR300005439":"test",
+     # "OXYRIA_NCBI_CHR500005514":"test",
+     # "OXYRIA_NCBI_CHR500005515":"test",
+     # "OXYRIA_NCBI_CHR600004621":"test",
+
+    # "OXYRIA_NCBI_CHR500005515":{
+       # "Baseline MG94xREV":0.009652149439954898,
+       # "Baseline MG94xREV omega ratio":0.5730726983670508,
+       # "Corrected P-value":1.984387007775146e-05,
+
+    # "OXYRIA_NCBI_CHR500005514":{
+       # "Baseline MG94xREV":0.01302162728218238,
+       # "Baseline MG94xREV omega ratio":1.44760088866469,
+       # "Corrected P-value":1.831867990631508e-12,
+
+     # "DOCTH0_CHR100000472":{
+       # "Baseline MG94xREV":0.05141586457768321,
+       # "Baseline MG94xREV omega ratio":0.1372979321207887,
+       # "Corrected P-value":0.04545651860136113,
 
 
 
-
-
-
+###########################
