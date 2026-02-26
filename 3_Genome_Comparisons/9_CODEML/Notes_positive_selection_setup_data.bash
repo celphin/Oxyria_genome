@@ -609,19 +609,123 @@ chmod +x generateMAFFTAlignment.sh
 ./generateMAFFTAlignment.sh
 # there is a --thread option if too slow
 
-#------------------------
+###############################
+# Come back to this after running HyPhy - only do for most significant genes
 # Should we do the protein alignments with PRANK?
 # More phylogenetically correct but more variable too
+
 # https://gensoft.pasteur.fr/docs/prank/170427/
 # https://ariloytynoja.github.io/prank-msa/
 
 module load StdEnv/2020  gcc/9.3.0  prank/170427
+ cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+ 
+awk '{print $1}' ABSREL_nonzero_sorted.txt | \
+sed 's/_tree.txt_unique.nxh.ABSREL.json/_tree.txt_Proteins.fasta/' \
+> prank_from_absrel_list.txt
 
-for f in *_Proteins.fasta; do
-  echo "prank -protein -d=\"$f\" -o=\"${f%.*}_alignment.fasta\""
-done > generatePRANKAlignment.sh
+head prank_from_absrel_list.txt
 
-#---------------------------
+wc -l prank_from_absrel_list.txt
+# 4076
+
+cat << 'EOF' > prank_absrel_array.sh
+#!/bin/bash
+#SBATCH --account=def-henryg
+#SBATCH --time=0-12:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
+#SBATCH --output=logs/prank_absrel_%A_%a.out
+#SBATCH --error=logs/prank_absrel_%A_%a.err
+
+# Load modules
+module load StdEnv/2020 gcc/9.3.0 prank
+
+# Go to working directory
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+# Number of files per SLURM array task
+CHUNK=6
+
+# Determine which lines this array task should process
+START=$(( (SLURM_ARRAY_TASK_ID - 1) * CHUNK + 1 ))
+END=$(( START + CHUNK - 1 ))
+
+TOTAL=$(wc -l < prank_from_absrel_list.txt)
+
+if [ $START -gt $TOTAL ]; then
+    echo "No files to process for this task."
+    exit 0
+fi
+
+if [ $END -gt $TOTAL ]; then
+    END=$TOTAL
+fi
+
+echo "Processing lines $START to $END"
+
+# Loop through assigned files
+sed -n "${START},${END}p" prank_from_absrel_list.txt | while read FILE
+do
+    if [[ ! -f "$FILE" ]]; then
+        echo "Missing file: $FILE — skipping"
+        continue
+    fi
+
+    # Set prefix and output file
+    PREFIX="${FILE%.*}_prank"
+    OUT="${PREFIX}.best.fas"
+
+    # Skip if output already exists
+    if [[ -f "$OUT" ]]; then
+        echo "Output exists for $FILE — skipping"
+        continue
+    fi
+
+    echo "Running PRANK on $FILE"
+
+    # Run PRANK
+    prank -protein -d="$FILE" -o="$PREFIX" 
+
+    echo "Finished $FILE"
+
+done
+
+EOF
+
+
+chmod +x prank_absrel_array.sh
+dos2unix prank_absrel_array.sh
+
+
+TOTAL=$(wc -l < prank_from_absrel_list.txt)
+JOBS=$(( (TOTAL + 5) / 6 ))
+echo $JOBS
+
+sbatch --array=1-680%100 prank_absrel_array.sh
+
+ls *.best.fas | wc -l
+# 4076
+
+#-----------
+# Prank palnal
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+for f in *_prank.best.fas; do
+  base_name="${f%_Proteins_prank.best.fas}"  # Remove the "_Proteins_alignment.fasta" part
+  echo "/home/celphin/scratch/Oxyria_Positive_Selection_Test/pal2nal.v14/pal2nal.pl \
+  \"$f\" \"${base_name}_Transcripts.fasta\" -output fasta -nogap > \"${base_name}_prank_pal2nal.fasta\""
+done > prank_pal2nal.sh
+
+# add #!/bin/bash
+
+chmod +x prank_pal2nal.sh
+
+./prank_pal2nal.sh
+
+###################################
 # Run pal2nal – convert alignments into paml format
 # The suggestion is to use pal2nal with “-nogap”, though codeml has a way to deal with these.
 # However, if you do not have sequence in your pal2nal output, likely you had gaps
