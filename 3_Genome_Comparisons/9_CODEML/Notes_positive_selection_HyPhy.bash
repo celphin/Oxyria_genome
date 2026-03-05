@@ -156,7 +156,7 @@ mkdir -p Arctic_trees
 for f in *_HyPhy.txt
 do
     base=${f%_HyPhy.txt}
-    mv ${base}* Arctic_trees/
+    cp ${base}* Arctic_trees/
 done
 
 # check
@@ -217,6 +217,8 @@ hyphy relax  --alignment OG0011565_tree.txt_unique.nxh --branches FOREGROUND
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
 mkdir -p logs
+
+tmux attach-session -t backup
 
 for f in *_tree.txt; do
     msa="${f}_pal2nal.fasta"
@@ -332,37 +334,8 @@ sbatch --array=1-850%100 absrel_array.sh
 ls *nxh
 ls *json
 
-
-#-----------------------------
-# OR Run each orthogroup in a new bash script of its own
-
-for f in *_tree.txt; do
-cat << EOF > absrel_${f}.sh
-#!/bin/bash
-#SBATCH --account=def-rieseber
-#SBATCH --time=0-01:30:00
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=5
-#SBATCH --mem=18G
-
-module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
-
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
-
-hyphy remove-duplicates.bf --msa "${f}_pal2nal.fasta" --tree "${f}_HyPhy.txt" --output "${f}_unique.nxh"
-hyphy absrel --alignment "${f}_unique.nxh\"
-#hyphy relax --alignment "${f}_unique.nxh"
-
-EOF
-
-chmod +x absrel_${f}.sh
-sbatch absrel_${f}.sh
-
-done 
-
-
 ###############################
-# Checking results
+# Checking results original
 
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
@@ -473,6 +446,93 @@ while read file _; do
 done <  ABSREL_nonzero_sorted.txt > all_significant_genes.tsv
 
 
+##################################
+# Look at all the data for each gene
+
+echo -e "file\tgene\tcorrected_p\tfull_adaptive_model\tnonsyn_subs\tsyn_subs" > all_genes.tsv
+
+while read file _; do
+  jq -r '
+    .["branch attributes"]["0"]
+    | to_entries[]
+    | [
+        "'"$file"'",
+        .key,
+        (.value["Corrected P-value"] // "NA"),
+        (.value["Full adaptive model"] // "NA"),
+        (.value["Full adaptive model (non-synonymous subs/site)"] // "NA"),
+        (.value["Full adaptive model (synonymous subs/site)"] // "NA")
+      ] | @tsv
+  ' "$file"
+done < ABSREL_nonzero_sorted.txt >> all_genes.tsv
+
+
+more all_genes.tsv
+# file    gene    corrected_p     full_adaptive_model     nonsyn_subs     syn_subs
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR300006814     0.0004372556584134046   0.3516174924510933      0.3516111809241831      0.000006311526910256882
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR400000398     0.02450561644103588     81.70688001451325       81.61750677619105       0.08937323832213598
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR400001723     0.04809666165521614     0.7219684042673827      0.7218549227459655      0.0001134815214158162
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR500000225     0.004120137030874105    0.8490730084796092      0.8277188893013476      0.02135411917826048
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR600006291     0.8251896945627508      0.009922310372463279    0.009922310372463279    1E-10
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR700004842     0.7288055648788709      0.04929395054839377     0.03978031196134621     0.00951363858704757
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR800005359     1       0.05346671284950748     0.0333851610557265      0.02008155179378096
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR800006070     0.02062170869551722     1.588682372205865       1.588431437175698       0.0002509350301664349
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR900000114     0.2253137037661492      0.2083161911023486      0.2083161911023486      1E-10
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR900001109     0.0003764289048757696   0.7361764732201124      0.7288597604512717      0.007316712768843253
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       NODE10  NA      0.01747597313518143     0.008870791092959381    0.008605182042222015
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       NODE14  NA      0.4242486888707904      0.424219634219517       0.00002905465127344884
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       NODE16  NA      0.1181149077389998      1E-10   0.1181149077389998
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       NODE4   NA      0.03224344260775407     0.009815819793640891    0.02242762281411316
+# OG0015441_tree.txt_unique.nxh.ABSREL.json       NODE9   NA      0.08640187693671385     0.04310605799912858     0.04329581893758524
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       101292950       NA      0.04224188206173039     0.01762990408411761     0.02461197797761279
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       106305749       NA      0.05526377480547504     0.04129273247652632     0.0139710423289487
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       106334671       NA      0.05685218901253847     0.02946906506949114     0.02738312394304725
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       106341938       NA      0.09253514647253609     0.04748065343387353     0.04505449303866266
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       AT3G24870       NA      0.005669645352322288    0.003809069473775934    0.001860575878546351
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       AT3G24880       NA      0       1E-10   1E-10
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR800000942     1       0.02908991671106302     0.005860313054690892    0.02322960365637216
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       FEHAP220557_T1  NA      0.9064784805021109      0.9012718063757053      0.005206674126413438
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       FEHAP227832_T1  NA      0.03087265623218266     0.01346867434473869     0.01740398188744395
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       FEHAP231234_T1  NA      0.02354448752524851     0.01701435386090207     0.00653013366434643
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       FT01GENE13907_T1        NA      0.02154504456836176     0.01294554579143482     0.0085994987769269
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       FT01GENE23674_T1        NA      0.02863323899943923     0.00837517491645824     0.02025806408298101
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       FT01GENE32782_T1        NA      0.01538833081088953     0.007794354732824121    0.007593976078065408
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       G13110_T1       1       0.01835770530710042     0.009186379267072341    0.009171326040028087
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       G13114_T1       1       0.01449186701940357     0.01217486056482487     0.002317006454578714
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC103927702    NA      0.008105510869024106    0.00600629644860563     0.002099214420418468
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC103960911    NA      0.0120865200058613      0.009656158848092868    0.002430361157768429
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC110226977    NA      0.0680983111685811      0.03691776620321979     0.0311805449653612
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC126585513    NA      0.007461265348889675    0.00550374520590679     0.001957520142982876
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC126620741    NA      0.009141231247546525    0.005782647630398593    0.003358583617147915
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC126805521    NA      0.04329538530776133     0.01765926655930957     0.02563611874845179
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC133737018    NA      0.02288372680383075     0.007900611097733148    0.01498311570609757
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC17893131     NA      0.02131636694347428     0.01396059275693361     0.007355774186540692
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC17893888     NA      0.02091798373128021     0.01116967683421007     0.00974830689707013
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC18768734     NA      0.046874236352324       0.0202918041743501      0.026582432177974
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       LOC9319635      NA      0.01540298146271036     0.007664874806765295    0.007738106655945072
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       MAKER_LG4_SNAP_GENE_88_212_MRNA_1       1       0.05577679831128731     0.01421545659384497     0.04156134171744238
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       MAKER_LG6_SNAP_GENE_34_144_MRNA_1       1       0.05730609043011364     0.02761174304367743     0.02969434738643626
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE10  NA      0       1E-10   1E-10
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE12  NA      0.001828331719167163    0.001828331719167163    1E-10
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE15  NA      0.002279967118069129    0.002279967118069129    1E-10
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE18  NA      0.2792557097959788      0.2576989867345455      0.02155672306143047
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE2   NA      0.150355362923261       0.1147208593710522      0.03563450355220867
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE21  NA      0.06746963677716496     0.04380567175271882     0.02366396502444627
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE22  NA      0.0548309739785904      0.0408688980758322      0.01396207590275822
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE23  NA      0.05867933677356833     0.02473046773865651     0.03394886903491185
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE28  NA      0.009074282400812419    0.00353019130788312     0.005544091092929301
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE29  NA      0.02566795546498141     0.01783363595732118     0.007834319507660262
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE3   NA      0.01975559073323658     0.009635425942293035    0.01012016479094355
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE33  NA      0.04125102071653155     0.02030002957309187     0.0209509911434398
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE34  NA      0.01892897222403469     0.005146874327040652    0.01378209789699406
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE35  NA      0.01194543544482175     0.009132554999078531    0.002812880445743206
+# OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE37  NA      0.01850525105393068     0.01008877362997801     0.008416477423952658
+
+# Find only the orthogroups with a p-value greater than 0.05 and only one gene from that species
+
+
+
+
 ###########################
 # Look at GO terms for significant genes
 
@@ -511,8 +571,6 @@ wc -l all_significant_genes_filtered.tsv
 
 #----------------------------
 # Check which OG have more than one species
-
-
 awk '
 {
     og = $1
@@ -555,31 +613,60 @@ END {
 sort -t$'\t' -k2,2nr OGs_multi_species.tsv > OGs_multi_species.sorted.tsv
 
 
-OG0005531_tree.txt_unique.nxh.ABSREL.json       4       Cochgroen,Draba,Dryas,Oxyria
-OG0004358_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0004437_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
-OG0004910_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Oxyria
-OG0005895_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
-OG0007028_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Oxyria
-OG0007601_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0008262_tree.txt_unique.nxh.ABSREL.json       3       Draba,Cochgroen,Dryas
-OG0008518_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Oxyria
-OG0008574_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Cochgroen
-OG0009332_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0009474_tree.txt_unique.nxh.ABSREL.json       3       Draba,Oxyria,Dryas
-OG0009836_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Cochgroen,Dryas
-OG0009890_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Dryas
-OG0009938_tree.txt_unique.nxh.ABSREL.json       3       Cochgroen,Dryas,Draba
-OG0011085_tree.txt_unique.nxh.ABSREL.json       3       Cochgroen,Draba,Oxyria
-OG0011114_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Dryas,Cochgroen
-OG0011174_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Cochgroen
-OG0012177_tree.txt_unique.nxh.ABSREL.json       3       Draba,Cochgroen,Dryas
-OG0012361_tree.txt_unique.nxh.ABSREL.json       3       Draba,Oxyria,Dryas
-OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Draba,Dryas,Cochgroen
+# OG0005531_tree.txt_unique.nxh.ABSREL.json       4       Cochgroen,Draba,Dryas,Oxyria
+# OG0004358_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
+# OG0004437_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0004910_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Oxyria
+# OG0005895_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0007028_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Oxyria
+# OG0007601_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
+# OG0008262_tree.txt_unique.nxh.ABSREL.json       3       Draba,Cochgroen,Dryas
+# OG0008518_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Oxyria
+# OG0008574_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Cochgroen
+# OG0009332_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
+# OG0009474_tree.txt_unique.nxh.ABSREL.json       3       Draba,Oxyria,Dryas
+# OG0009836_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Cochgroen,Dryas
+# OG0009890_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Dryas
+# OG0009938_tree.txt_unique.nxh.ABSREL.json       3       Cochgroen,Dryas,Draba
+# OG0011085_tree.txt_unique.nxh.ABSREL.json       3       Cochgroen,Draba,Oxyria
+# OG0011114_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Dryas,Cochgroen
+# OG0011174_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Cochgroen
+# OG0012177_tree.txt_unique.nxh.ABSREL.json       3       Draba,Cochgroen,Dryas
+# OG0012361_tree.txt_unique.nxh.ABSREL.json       3       Draba,Oxyria,Dryas
+# OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
+# OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
+# OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Draba,Dryas,Cochgroen
 
 
+##############################
+# Excluding gene families with paralogs in Arctic species showing significance
+
+
+more ABSREL_nonzero_sorted.txt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#######################################
+# check functions for all genes with multiple overlaps
 grep OG0005531 InterProscan_ABSREL_sig_genes.tsv
 
 # OG0005531       DOCTH0_CHR200004771     0.00612228594200048     Dryas_octopetala_interproscan_output.tsv        IPR007034,IPR012948,IPR027417,IPR030387,IPR037875,IPR039761  C-terminal, N-terminal,AARP2CN,Bms1/Tsr1-type G domain,P-loop containing nucleoside triphosphate hydrolase,Ribosome biogenesis protein Bms1,Ribosome biogenesis protein Bms1/Tsr1,Ribosome biogenesis protein BMS1/TSR1    GO:0005525,GO:0005634,GO:0042254
@@ -588,6 +675,298 @@ grep OG0005531 InterProscan_ABSREL_sig_genes.tsv
 # OG0005531       SNAP_MASKED_LG5_PROCESSED_GENE_102_35_MRNA_1    0.0354711550003797      NA      NA      NA      NA
 
 # Ribosome biogenesis protein
+
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology
+
+awk -F'\t' '{
+    split($1,a,"_tree");
+    print a[1] "\t" $2 "\t" $3
+}' OGs_multi_species.sorted.tsv > OG_counts_species.tsv
+
+
+awk -F'\t' '
+NR==FNR {
+    count[$1]=$2;
+    spp[$1]=$3;
+    next
+}
+($1 in count) {
+    print $1 "\t" count[$1] "\t" spp[$1] "\t" $0
+}
+' OG_counts_species.tsv InterProscan_ABSREL_sig_genes.tsv >  OG_full_annotation.tsv
+
+cut -f1,2,9 OG_full_annotation.sorted.tsv > OG_description_count.tsv
+
+sort OG_description_count.tsv | uniq > OG_description_count.unique.tsv
+
+grep -v -P '\tNA$' OG_description_count.tsv | sort | uniq > OG_description_count.noNA.tsv
+
+# Most of these genes fall into four broad categories:
+# Ribosome and RNA biogenesis / modification – OG0005531, OG0008518, OG0009836, OG0009938
+# ATPase/GTPase and cytoskeleton remodeling – OG0004437, OG0007028
+# Membrane transport / signaling – OG0009332, OG0011174, OG0012361
+# Protein interaction / structural repeat scaffolds – OG0009474, OG0011085, OG0011114, OG0009890
+
+# Secondary themes include stress response, 
+# glycosylation, and mitochondrial import.
+
+# OG0012177 – LEA (Late embryogenesis abundant) protein
+# OG0004910 – Glycosyltransferase (DUF4094)
+# OG0009836 – SAM-dependent RNA methyltransferase
+
+
+# | OG ID     | Count | Key Domains / Annotations                                                | Functional Theme                |
+# | --------- | ----- | ------------------------------------------------------------------------ | ------------------------------- |
+# | OG0005531 | 4     | Bms1/Tsr1-type G domain, P-loop NTPase, Ribosome biogenesis protein Bms1 | Ribosome / RNA biogenesis       |
+# | OG0008518 | 3     | Large ribosomal subunit protein uL5, conserved sites                     | Ribosome / RNA biogenesis       |
+# | OG0009836 | 3     | RsmD, RNA methyltransferase, SAM-dependent methyltransferase             | RNA modification / Ribosome     |
+# | OG0009938 | 3     | U3 small nucleolar RNA-associated protein 13, WD40 repeats               | Ribosome / RNA biogenesis       |
+# | OG0004437 | 3     | MICRORCHIDIA ATPase, S5 domain, HSP90-like ATPase                        | ATPase / Cytoskeleton           |
+# | OG0007028 | 3     | FH2 domain, Formin-like                                                  | Cytoskeleton / Actin nucleation |
+# | OG0009332 | 3     | Major facilitator superfamily (MFS transporter)                          | Membrane transport              |
+# | OG0011174 | 3     | 7TM GPCR, GCR1-cAMP receptor                                             | Membrane signaling              |
+# | OG0012361 | 3     | Nonaspanin (TM9SF)                                                       | Membrane transport              |
+# | OG0004910 | 3     | Glycosyltransferase, DUF4094                                             | Protein / Glycosylation         |
+# | OG0009474 | 3     | Beta-propeller, RING/FYVE/PHD, Clathrin, Zinc finger                     | Protein interaction / Scaffold  |
+# | OG0011085 | 3     | Tetratricopeptide repeat (TPR), CLU domain                               | Protein interaction / Scaffold  |
+# | OG0011114 | 3     | Pentatricopeptide repeat (PPR), TPR-like                                 | Protein interaction / Scaffold  |
+# | OG0009890 | 3     | BRCA2 helical domain, OB-fold, Nucleic acid-binding                      | Protein interaction / Scaffold  |
+# | OG0012177 | 3     | LEA_2 subgroup, Late embryogenesis abundant protein                      | Stress / Development            |
+# | OG0008574 | 3     | Tim23-like                                                               | Mitochondrial import            |
+# | OG0004358 | 3     | Inositol monophosphatase (HAL2)                                          | Metabolism / Signaling          |
+
+
+# | OG ID     | Functional Category             | Evolution in Most Plants | Likely Arctic-Specific Positive Selection | Notes                                                           |
+# | --------- | ------------------------------- | ------------------------ | ----------------------------------------- | --------------------------------------------------------------- |
+# | OG0005531 | Ribosome / RNA biogenesis       | Highly conserved         | Likely                                    | Cold-stable ribosome assembly advantageous in Arctic plants     |
+# | OG0008518 | Ribosome / RNA biogenesis       | Highly conserved         | Likely                                    | uL5 ribosomal protein may evolve subtle stabilizing mutations   |
+# | OG0009836 | RNA modification / Ribosome     | Moderately conserved     | Likely                                    | RNA methyltransferases stabilize rRNA under cold stress         |
+# | OG0009938 | Ribosome / RNA biogenesis       | Highly conserved         | Likely                                    | WD40 scaffold for snoRNA processing, supports ribosome assembly |
+# | OG0004437 | ATPase / Cytoskeleton           | Moderately conserved     | Possible                                  | Morc ATPase may have adaptive variants in Arctic plants         |
+# | OG0007028 | Cytoskeleton / Actin nucleation | Moderately conserved     | Likely                                    | Formins critical for actin dynamics at low temperatures         |
+# | OG0009332 | Membrane transport              | Variable                 | Likely                                    | MFS transporter function affected by membrane fluidity          |
+# | OG0011174 | Membrane signaling (GPCR)       | Variable                 | Possible                                  | GPCR adaptations may tune stress signaling pathways             |
+# | OG0012361 | Membrane transport              | Moderately conserved     | Possible                                  | TM9SF function may be fine-tuned for cold environments          |
+# | OG0004910 | Protein / Glycosylation         | Conserved                | Possible                                  | Glycosylation may stabilize proteins in cold stress             |
+# | OG0009474 | Protein interaction / Scaffold  | Moderately conserved     | Possible                                  | Beta-propeller/RING may aid multi-protein complex stability     |
+# | OG0011085 | Protein interaction / Scaffold  | Conserved                | Possible                                  | TPR scaffolds stabilize protein interactions under stress       |
+# | OG0011114 | Protein interaction / Scaffold  | Conserved                | Possible                                  | PPR proteins involved in RNA editing, may adapt for cold        |
+# | OG0009890 | Protein interaction / Scaffold  | Conserved                | Possible                                  | BRCA2-like scaffold may support DNA repair under stress         |
+# | OG0012177 | Stress / Development            | Variable                 | Likely                                    | LEA proteins are classic cold/drought adaptation targets        |
+# | OG0008574 | Mitochondrial import            | Highly conserved         | Possible                                  | Tim23-like ensures energy production in cold conditions         |
+# | OG0004358 | Metabolism / Signaling          | Conserved                | Possible                                  | Inositol monophosphatase may help osmotic balance in cold       |
+
+# Ribosome / RNA biogenesis genes 
+# (OG0005531, OG0008518, OG0009836, OG0009938)
+# Cold slows translation and RNA processing.
+ # Mutations that stabilize ribosomes or RNA under 
+ # cold stress increase fitness.
+# Studies in Arctic and alpine plants (like Arabidopsis lyrata, 
+# Brassica species) have shown ribosomal proteins and RNA 
+# modification enzymes under positive selection in cold-adapted 
+# populations.
+
+# Cytoskeleton / ATPase genes (OG0004437, OG0007028)
+# Maintaining actin dynamics and protein complexes at low 
+# temperatures is critical. Adaptive changes in actin nucleators
+ # and ATPases have been documented in extremophile plants.
+
+# Membrane transport / signaling genes (OG0009332, OG0011174, OG0012361)
+# Membrane fluidity and transporter function are strongly 
+# influenced by temperature. Selection often favors alleles 
+# that maintain transporter efficiency in freezing conditions.
+
+# Stress / LEA proteins (OG0012177)
+# LEA proteins are classic examples of cold and desiccation-adaptive 
+# genes. Positive selection in LEA proteins is well-documented 
+# in Arctic, alpine, and drought-tolerant plants.
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC11772582/
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC9031148/
+
+########################
+################################
+# Rerun with prank alignments
+
+# get file list of non empty files
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+mkdir -p logs
+
+for f in *_tree.txt; do
+    msa="${f}_prank_pal2nal.fasta"
+    tree="${f}_HyPhy.txt"
+
+    # Require both files
+    [[ -f "$msa" && -f "$tree" ]] || continue
+
+    # Require at least 2 sequences
+    seq_count=$(grep -c "^>" "$msa")
+    [[ $seq_count -ge 2 ]] || continue
+
+    # Skip zero-length sequences (ignoring gaps)
+    if awk '
+        /^>/ {
+            if (seq_len == 0 && NR > 1) exit 1
+            seq_len = 0
+            next
+        }
+        { gsub("-", ""); seq_len += length($0) }
+        END { if (seq_len == 0) exit 1 }
+    ' "$msa"
+    then
+        echo "$f"
+    fi
+
+done > filtered_prank_tree_list.txt
+
+# check count
+wc -l filtered_prank_tree_list.txt
+# 4053 
+
+#-------------------------
+# use nano to import text
+cat << EOF > absrel_prank_array.sh
+#!/bin/bash
+#SBATCH --account=def-henryg
+#SBATCH --time=0-6:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --mem=32G
+#SBATCH --output=logs/absrel_prank_%A_%a.out
+#SBATCH --error=logs/absrel_prank_%A_%a.err
+
+module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 hyphy/2.5.49
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+CHUNK=10
+
+START=$(( (SLURM_ARRAY_TASK_ID - 1) * CHUNK + 1 ))
+END=$(( START + CHUNK - 1 ))
+
+TOTAL=$(wc -l < filtered_prank_tree_list.txt)
+
+if [ $END -gt $TOTAL ]; then
+    END=$TOTAL
+fi
+
+echo "Processing lines $START to $END"
+
+sed -n "${START},${END}p" filtered_prank_tree_list.txt | while read f
+do
+    echo "Processing $f"
+
+    msa="${f}_prank_pal2nal.fasta"
+    tree="${f}_HyPhy.txt"
+    output="${f}_prank_unique.nxh"
+
+    if [[ -f "$output" ]]; then
+        echo "Output exists for $f — skipping"
+        continue
+    fi
+
+    hyphy remove-duplicates.bf \
+        --msa "$msa" \
+        --tree "$tree" \
+        --output "$output"
+
+    hyphy absrel \
+        --alignment "$output" \
+        --branches FOREGROUND
+
+    echo "Finished $f"
+done
+
+EOF
+
+chmod +x absrel_prank_array.sh
+dos2unix absrel_prank_array.sh
+
+sbatch --array=1-406%100 absrel_prank_array.sh
+# Submitted batch job 57303060
+
+#--------------------
+# Check
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+ls *_prank_unique.nxh | wc -l
+ls *_prank_unique.nxh.ABSREL.json  | wc -l
+# 4053
+# 3961
+
+#------------------------
+for f in *_prank_unique.nxh.ABSREL.json; do
+  jq -r --arg file "$f" \
+    '$file + "\t" + (.["test results"]["positive test results"]|tostring) + "\t" + (.["test results"].tested|tostring)' "$f"
+done >> Total_ABSREL_prank_results.txt
+
+
+# filter for only those with positive selection
+awk '$2 != 0' Total_ABSREL_prank_results.txt | sort -k2,2nr > ABSREL_prank_nonzero_sorted.txt
+
+# get gene names
+while read file _; do
+  jq -r '
+    .["branch attributes"]["0"]
+    | to_entries[]
+    | select(.value["Corrected P-value"] < 0.05)
+    | "'"$file"'\t\(.key)\t\(.value["Corrected P-value"])"
+  ' "$file"
+done <  ABSREL_nonzero_sorted.txt > all_significant_genes_prank.tsv
+
+#------------------
+# Link to gene functions
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology
+
+cp /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees/all_significant_genes_prank.tsv . 
+
+awk -F'\t' '$NF != "null"' all_significant_genes_prank.tsv > all_significant_genes_prank_filtered.tsv
+
+
+# Check which OG have more than one species
+awk '
+{
+    og = $1
+    gene = $2
+
+    if (gene ~ /^OXYRIA/) species="Oxyria"
+    else if (gene ~ /^DOCT/) species="Dryas"
+    else if (gene ~ /^G[0-9]+_T/) species="Cochgroen"
+    else species="Draba"
+
+    key = og SUBSEP species
+    seen[key] = 1
+}
+
+END {
+    for (k in seen) {
+        split(k, a, SUBSEP)
+        og = a[1]
+        species = a[2]
+
+        if (!(og in species_count)) {
+            species_count[og] = 0
+            species_list[og] = species
+        } else if (species_list[og] !~ species) {
+            species_list[og] = species_list[og] "," species
+        }
+
+        species_count[og]++
+    }
+
+    for (og in species_count) {
+        if (species_count[og] > 1) {
+            print og "\t" species_count[og] "\t" species_list[og]
+        }
+    }
+}
+' all_significant_genes_prank_filtered.tsv | sort > OGs_multi_species_prank.tsv
+
+sort -t$'\t' -k2,2nr OGs_multi_species_prank.tsv > OGs_multi_species_prank.sorted.tsv
+
+
+
 
 ##########################
 # Join files in R 

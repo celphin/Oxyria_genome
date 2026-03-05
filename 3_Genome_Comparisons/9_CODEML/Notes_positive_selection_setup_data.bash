@@ -636,8 +636,8 @@ cat << 'EOF' > prank_absrel_array.sh
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --output=logs/prank_absrel_%A_%a.out
-#SBATCH --error=logs/prank_absrel_%A_%a.err
+#SBATCH --output=logs/prank_%A_%a.out
+#SBATCH --error=logs/prank_%A_%a.err
 
 # Load modules
 module load StdEnv/2020 gcc/9.3.0 prank
