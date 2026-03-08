@@ -15,6 +15,7 @@
 
 ######################
 # Narval2
+tmux new-session -s total
 tmux attach-session -t total
 
 # Load modules
@@ -466,6 +467,8 @@ while read file _; do
   ' "$file"
 done < ABSREL_nonzero_sorted.txt >> all_genes.tsv
 
+#------------------------------------
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
 more all_genes.tsv
 # file    gene    corrected_p     full_adaptive_model     nonsyn_subs     syn_subs
@@ -528,9 +531,266 @@ more all_genes.tsv
 # OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE35  NA      0.01194543544482175     0.009132554999078531    0.002812880445743206
 # OG0002756_tree.txt_unique.nxh.ABSREL.json       NODE37  NA      0.01850525105393068     0.01008877362997801     0.008416477423952658
 
-# Find only the orthogroups with a p-value greater than 0.05 and only one gene from that species
+#-------------------------
+# Find only the orthogroups with a p-value greater than 0.05 and 
+# only one gene from that species in that group
+
+awk -F'\t' '
+BEGIN {
+    OFS="\t"
+    # Define species
+    species_list[1]="Dryas"
+    species_list[2]="Oxyria"
+    species_list[3]="Draba"
+    species_list[4]="Coch"
+}
+NR==1 {
+    # Save header
+    header = $0
+    next
+}
+{
+    # Assign species based on gene ID
+    if ($2 ~ /^DOCTH0_CHR/) species="Dryas"
+    else if ($2 ~ /^OXYRIA_NCBI_CHR/) species="Oxyria"
+    else if ($2 ~ /^MAKER_/ || $2 ~ /^SNAP_MASKED_/) species="Draba"
+    else if ($2 ~ /^G[0-9]+_T[0-9]+/) species="Coch"
+    else species="Other"
+
+    # Count all genes per OG per species (for exclusion)
+    all_count[$1,species]++
+
+    # Only keep significant genes for output
+    if ($3 < 0.05) {
+        genes[$1] = genes[$1] $0 "\n"
+        species_per_OG[$1][species]=1
+    }
+}
+END {
+    single_copy_file="OG_single_copy_significant.tsv"
+    gene_names_file="OG_single_copy_significant_gene_names.txt"
+    uniqueOG_file="OG_single_copy_significant_uniqueOG.txt"
+    species_counts_file="OG_single_copy_species_counts.txt"
+
+    # Header for single-copy file
+    print header > single_copy_file
+
+    # Header for species count summary
+    print "OG", "Num_species_with_sig_gene", "Species" > species_counts_file
+
+    for (og in genes) {
+        exclude=0
+        # Exclude OGs if any species has >1 gene (total genes, not only significant)
+        for (i=1;i<=4;i++) {
+            s=species_list[i]
+            if (all_count[og,s]>1) {exclude=1; break}
+        }
+
+        if (!exclude) {
+            # Save OG lines
+            printf "%s", genes[og] >> single_copy_file
+
+            # Save gene names
+            split(genes[og], lines, "\n")
+            for (i in lines) if (lines[i] != "") {
+                split(lines[i], fields, FS)
+                print fields[2] >> gene_names_file
+            }
+
+            # Unique OG list
+            print og >> uniqueOG_file
+
+            # Species counts summary (fixed order)
+            n=0; species_list_str=""
+            for (j=1;j<=4;j++) {
+                s=species_list[j]
+                if (species_per_OG[og][s]) {
+                    n++
+                    species_list_str = species_list_str ? species_list_str "," s : s
+                }
+            }
+            print og, n, species_list_str >> species_counts_file
+        }
+    }
+
+    # Sort species counts descending by number of species
+    system("head -n 1 " species_counts_file " > tmp_header && tail -n +2 " species_counts_file " | sort -k2,2nr >> tmp_header && mv tmp_header OG_single_copy_species_counts_sorted.tsv")
+}
+' all_genes.tsv
+
+more OG_single_copy_species_counts_sorted.tsv
+
+# OG      Num_species_with_sig_gene       Species
+# OG0005895_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0008262_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0008518_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Coch
+# OG0009474_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0009938_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0011085_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Coch
+# OG0011114_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Coch
+# OG0011174_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Coch
+# OG0012177_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0012361_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+
+wc -l OG_single_copy_species_counts_sorted.tsv
+# 1664 OG_single_copy_species_counts_sorted.tsv
 
 
+
+###########################
+# Also get list for those with paralogs
+
+awk -F'\t' '
+BEGIN {
+    OFS="\t"
+    # Define species
+    species_list[1]="Dryas"
+    species_list[2]="Oxyria"
+    species_list[3]="Draba"
+    species_list[4]="Coch"
+}
+NR==1 {
+    # Save header
+    header = $0
+    next
+}
+{
+    # Only keep significant genes
+    if ($3 >= 0.05) next
+
+    # Assign species based on gene ID
+    if ($2 ~ /^DOCTH0_CHR/) species="Dryas"
+    else if ($2 ~ /^OXYRIA_NCBI_CHR/) species="Oxyria"
+    else if ($2 ~ /^MAKER_/ || $2 ~ /^SNAP_MASKED_/) species="Draba"
+    else if ($2 ~ /^G[0-9]+_T[0-9]+/) species="Coch"
+    else species="Other"
+
+    # Count genes per OG per species
+    count[$1,species]++
+    # Store line per OG
+    genes[$1] = genes[$1] $0 "\n"
+    # Track species per OG
+    species_per_OG[$1][species]=1
+}
+END {
+    # Output single-copy significant genes
+    single_copy_file="OG_paralogs_significant.tsv"
+    gene_names_file="OG_paralogs_significant_gene_names.txt"
+    uniqueOG_file="OG_paralogs_significant_uniqueOG.txt"
+    species_counts_file="OG_paralogs_species_counts.txt"
+
+    # Header for single-copy file
+    print header > single_copy_file
+
+    # Header for species count summary
+    print "OG", "Num_species_with_sig_gene", "Species" > species_counts_file
+
+    for (og in genes) {
+        exclude=0
+        # Check if any species has >1 gene in this OG
+        for (i=1;i<=4;i++) {
+            s=species_list[i]
+            if (count[og,s]>1) {exclude=1; break}
+        }
+        if (!exclude) {
+            # Save OG lines
+            printf "%s", genes[og] >> single_copy_file
+
+            # Save gene names
+            split(genes[og], lines, "\n")
+            for (i in lines) if (lines[i] != "") {
+                split(lines[i], fields, FS)
+                print fields[2] >> gene_names_file
+            }
+
+            # Unique OG list
+            print og >> uniqueOG_file
+
+            # Species counts summary
+            n=0; species_list_str=""
+            for (s in species_per_OG[og]) {
+                n++
+                species_list_str = species_list_str ? species_list_str "," s : s
+            }
+            print og, n, species_list_str >> species_counts_file
+        }
+    }
+
+    # Sort species counts descending by number of species
+    system("head -n 1 " species_counts_file " > tmp_header && tail -n +2 " species_counts_file " | sort -k2,2nr >> tmp_header && \
+	mv tmp_header OG_paralogs_species_counts_sorted.tsv")
+}
+' all_genes.tsv
+
+more OG_paralogs_species_counts_sorted.tsv
+
+wc -l OG_paralogs_species_counts_sorted.tsv
+# 3744 OG_paralogs_species_counts_sorted.tsv
+
+# OG      Num_species_with_sig_gene       Species
+# OG0005531_tree.txt_unique.nxh.ABSREL.json       4       Coch,Dryas,Oxyria,Draba
+# OG0004358_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0004910_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0005895_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0007028_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0007601_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0008262_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0008518_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Oxyria
+# OG0008574_tree.txt_unique.nxh.ABSREL.json       3       Coch,Oxyria,Draba
+# OG0009332_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0009474_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0009836_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Oxyria
+# OG0009890_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0009938_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0011085_tree.txt_unique.nxh.ABSREL.json       3       Coch,Oxyria,Draba
+# OG0011114_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Oxyria
+# OG0011174_tree.txt_unique.nxh.ABSREL.json       3       Coch,Oxyria,Draba
+# OG0012177_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0012361_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+# OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Coch,Dryas,Draba
+
+more OG_single_copy_species_counts_sorted.tsv
+
+# OG      Num_species_with_sig_gene       Species
+# OG0005895_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0008262_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0008518_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Coch
+# OG0009474_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0009938_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0011085_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Coch
+# OG0011114_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Coch
+# OG0011174_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Coch
+# OG0012177_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0012361_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
+# OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+# OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Coch
+
+# Functions
+# | OG ID     | Count | Key Domains / Annotations                                                | Functional Theme                |
+# | --------- | ----- | ------------------------------------------------------------------------ | ------------------------------- |
+# | OG0005531 | 4     | Bms1/Tsr1-type G domain, P-loop NTPase, Ribosome biogenesis protein Bms1 | Ribosome / RNA biogenesis       |
+# | OG0008518 | 3     | Large ribosomal subunit protein uL5, conserved sites                     | Ribosome / RNA biogenesis       |
+# | OG0009836 | 3     | RsmD, RNA methyltransferase, SAM-dependent methyltransferase             | RNA modification / Ribosome     |
+# | OG0009938 | 3     | U3 small nucleolar RNA-associated protein 13, WD40 repeats               | Ribosome / RNA biogenesis       |
+# | OG0004437 | 3     | MICRORCHIDIA ATPase, S5 domain, HSP90-like ATPase                        | ATPase / Cytoskeleton           |
+# | OG0007028 | 3     | FH2 domain, Formin-like                                                  | Cytoskeleton / Actin nucleation |
+# | OG0009332 | 3     | Major facilitator superfamily (MFS transporter)                          | Membrane transport              |
+# | OG0011174 | 3     | 7TM GPCR, GCR1-cAMP receptor                                             | Membrane signaling              |
+# | OG0012361 | 3     | Nonaspanin (TM9SF)                                                       | Membrane transport              |
+# | OG0004910 | 3     | Glycosyltransferase, DUF4094                                             | Protein / Glycosylation         |
+# | OG0009474 | 3     | Beta-propeller, RING/FYVE/PHD, Clathrin, Zinc finger                     | Protein interaction / Scaffold  |
+# | OG0011085 | 3     | Tetratricopeptide repeat (TPR), CLU domain                               | Protein interaction / Scaffold  |
+# | OG0011114 | 3     | Pentatricopeptide repeat (PPR), TPR-like                                 | Protein interaction / Scaffold  |
+# | OG0009890 | 3     | BRCA2 helical domain, OB-fold, Nucleic acid-binding                      | Protein interaction / Scaffold  |
+# | OG0012177 | 3     | LEA_2 subgroup, Late embryogenesis abundant protein                      | Stress / Development            |
+# | OG0008574 | 3     | Tim23-like                                                               | Mitochondrial import            |
+# | OG0004358 | 3     | Inositol monophosphatase (HAL2)                                          | Metabolism / Signaling          |
 
 
 ###########################
@@ -636,33 +896,6 @@ sort -t$'\t' -k2,2nr OGs_multi_species.tsv > OGs_multi_species.sorted.tsv
 # OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
 # OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
 # OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Draba,Dryas,Cochgroen
-
-
-##############################
-# Excluding gene families with paralogs in Arctic species showing significance
-
-
-more ABSREL_nonzero_sorted.txt
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 #######################################
@@ -785,6 +1018,22 @@ grep -v -P '\tNA$' OG_description_count.tsv | sort | uniq > OG_description_count
 # https://pmc.ncbi.nlm.nih.gov/articles/PMC9031148/
 
 ########################
+# Prank results from below
+
+# OG0005531_tree.txt_prank_unique.nxh.ABSREL.json 3       Cochgroen,Oxyria,Draba
+# OG0011114_tree.txt_prank_unique.nxh.ABSREL.json 3       Oxyria,Dryas,Cochgroen
+# OG0011456_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Oxyria,Draba
+# OG0012809_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Draba,Cochgroen
+
+# How many are paralogs?
+
+# Functions
+# | OG ID     | Count | Key Domains / Annotations                                                | Functional Theme                |
+# | --------- | ----- | ------------------------------------------------------------------------ | ------------------------------- |
+# | OG0005531 | 4     | Bms1/Tsr1-type G domain, P-loop NTPase, Ribosome biogenesis protein Bms1 | Ribosome / RNA biogenesis       |
+# | OG0011114 | 3     | Pentatricopeptide repeat (PPR), TPR-like                                 | Protein interaction / Scaffold  |
+
+
 ################################
 # Rerun with prank alignments
 
@@ -913,7 +1162,7 @@ while read file _; do
     | select(.value["Corrected P-value"] < 0.05)
     | "'"$file"'\t\(.key)\t\(.value["Corrected P-value"])"
   ' "$file"
-done <  ABSREL_nonzero_sorted.txt > all_significant_genes_prank.tsv
+done <  ABSREL_prank_nonzero_sorted.txt > all_significant_genes_prank.tsv
 
 #------------------
 # Link to gene functions
@@ -965,7 +1214,353 @@ END {
 
 sort -t$'\t' -k2,2nr OGs_multi_species_prank.tsv > OGs_multi_species_prank.sorted.tsv
 
+# OG0005531_tree.txt_prank_unique.nxh.ABSREL.json 3       Cochgroen,Oxyria,Draba
+# OG0011114_tree.txt_prank_unique.nxh.ABSREL.json 3       Oxyria,Dryas,Cochgroen
+# OG0011456_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Oxyria,Draba
+# OG0012809_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Draba,Cochgroen
 
+#---------------------
+# Check for paralogs
+
+echo -e "file\tgene\tcorrected_p\tfull_adaptive_model\tnonsyn_subs\tsyn_subs" > all_genes_prank.tsv
+
+while read file _; do
+  jq -r '
+    .["branch attributes"]["0"]
+    | to_entries[]
+    | [
+        "'"$file"'",
+        .key,
+        (.value["Corrected P-value"] // "NA"),
+        (.value["Full adaptive model"] // "NA"),
+        (.value["Full adaptive model (non-synonymous subs/site)"] // "NA"),
+        (.value["Full adaptive model (synonymous subs/site)"] // "NA")
+      ] | @tsv
+  ' "$file"
+done < ABSREL_prank_nonzero_sorted.txt >> all_genes_prank.tsv
+
+# Find only the orthogroups with a p-value greater than 0.05 and 
+# only one gene from that species in that group
+
+awk -F'\t' '
+BEGIN {
+    OFS="\t"
+    # Define species
+    species_list[1]="Dryas"
+    species_list[2]="Oxyria"
+    species_list[3]="Draba"
+    species_list[4]="Coch"
+}
+NR==1 {
+    # Save header
+    header = $0
+    next
+}
+{
+    # Assign species based on gene ID
+    if ($2 ~ /^DOCTH0_CHR/) species="Dryas"
+    else if ($2 ~ /^OXYRIA_NCBI_CHR/) species="Oxyria"
+    else if ($2 ~ /^MAKER_/ || $2 ~ /^SNAP_MASKED_/) species="Draba"
+    else if ($2 ~ /^G[0-9]+_T[0-9]+/) species="Coch"
+    else species="Other"
+
+    # Count all genes per OG per species (for exclusion)
+    all_count[$1,species]++
+
+    # Only keep significant genes for output
+    if ($3 < 0.05) {
+        genes[$1] = genes[$1] $0 "\n"
+        species_per_OG[$1][species]=1
+    }
+}
+END {
+    single_copy_file="OG_single_copy_significant_prank.tsv"
+    gene_names_file="OG_single_copy_significant_gene_names_prank.txt"
+    uniqueOG_file="OG_single_copy_significant_uniqueOG_prank.txt"
+    species_counts_file="OG_single_copy_species_counts_prank.txt"
+
+    # Header for single-copy file
+    print header > single_copy_file
+
+    # Header for species count summary
+    print "OG", "Num_species_with_sig_gene", "Species" > species_counts_file
+
+    for (og in genes) {
+        exclude=0
+        # Exclude OGs if any species has >1 gene (total genes, not only significant)
+        for (i=1;i<=4;i++) {
+            s=species_list[i]
+            if (all_count[og,s]>1) {exclude=1; break}
+        }
+
+        if (!exclude) {
+            # Save OG lines
+            printf "%s", genes[og] >> single_copy_file
+
+            # Save gene names
+            split(genes[og], lines, "\n")
+            for (i in lines) if (lines[i] != "") {
+                split(lines[i], fields, FS)
+                print fields[2] >> gene_names_file
+            }
+
+            # Unique OG list
+            print og >> uniqueOG_file
+
+            # Species counts summary (fixed order)
+            n=0; species_list_str=""
+            for (j=1;j<=4;j++) {
+                s=species_list[j]
+                if (species_per_OG[og][s]) {
+                    n++
+                    species_list_str = species_list_str ? species_list_str "," s : s
+                }
+            }
+            print og, n, species_list_str >> species_counts_file
+        }
+    }
+
+    # Sort species counts descending by number of species
+    system("head -n 1 " species_counts_file " > tmp_header && tail -n +2 " species_counts_file " | sort -k2,2nr >> tmp_header && mv tmp_header \
+	OG_single_copy_species_counts_sorted_prank.tsv")
+}
+' all_genes_prank.tsv
+
+more OG_single_copy_species_counts_sorted_prank.tsv
+
+# OG      Num_species_with_sig_gene       Species
+# OG0011114_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Oxyria,Coch
+# OG0011456_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Oxyria,Draba
+# OG0005895_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Oxyria
+# OG0007572_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Coch
+# OG0007884_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Oxyria
+# OG0008152_tree.txt_prank_unique.nxh.ABSREL.json 2       Draba,Coch
+# OG0008378_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Draba
+# OG0008499_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Draba
+
+#---------------------------------
+awk -F'\t' '
+BEGIN {
+    OFS="\t"
+    # Define species
+    species_list[1]="Dryas"
+    species_list[2]="Oxyria"
+    species_list[3]="Draba"
+    species_list[4]="Coch"
+}
+NR==1 {
+    # Save header
+    header = $0
+    next
+}
+{
+    # Only keep significant genes
+    if ($3 >= 0.05) next
+
+    # Assign species based on gene ID
+    if ($2 ~ /^DOCTH0_CHR/) species="Dryas"
+    else if ($2 ~ /^OXYRIA_NCBI_CHR/) species="Oxyria"
+    else if ($2 ~ /^MAKER_/ || $2 ~ /^SNAP_MASKED_/) species="Draba"
+    else if ($2 ~ /^G[0-9]+_T[0-9]+/) species="Coch"
+    else species="Other"
+
+    # Count genes per OG per species
+    count[$1,species]++
+    # Store line per OG
+    genes[$1] = genes[$1] $0 "\n"
+    # Track species per OG
+    species_per_OG[$1][species]=1
+}
+END {
+    # Output single-copy significant genes
+    single_copy_file="OG_paralogs_significant_prank.tsv"
+    gene_names_file="OG_paralogs_significant_gene_names_prank.txt"
+    uniqueOG_file="OG_paralogs_significant_uniqueOG_prank.txt"
+    species_counts_file="OG_paralogs_species_counts_prank.txt"
+
+    # Header for single-copy file
+    print header > single_copy_file
+
+    # Header for species count summary
+    print "OG", "Num_species_with_sig_gene", "Species" > species_counts_file
+
+    for (og in genes) {
+        exclude=0
+        # Check if any species has >1 gene in this OG
+        for (i=1;i<=4;i++) {
+            s=species_list[i]
+            if (count[og,s]>1) {exclude=1; break}
+        }
+        if (!exclude) {
+            # Save OG lines
+            printf "%s", genes[og] >> single_copy_file
+
+            # Save gene names
+            split(genes[og], lines, "\n")
+            for (i in lines) if (lines[i] != "") {
+                split(lines[i], fields, FS)
+                print fields[2] >> gene_names_file
+            }
+
+            # Unique OG list
+            print og >> uniqueOG_file
+
+            # Species counts summary
+            n=0; species_list_str=""
+            for (s in species_per_OG[og]) {
+                n++
+                species_list_str = species_list_str ? species_list_str "," s : s
+            }
+            print og, n, species_list_str >> species_counts_file
+        }
+    }
+
+    # Sort species counts descending by number of species
+    system("head -n 1 " species_counts_file " > tmp_header && tail -n +2 " species_counts_file " | sort -k2,2nr >> tmp_header && \
+	mv tmp_header OG_paralogs_species_counts_sorted_prank.tsv")
+}
+' all_genes_prank.tsv
+
+more OG_paralogs_species_counts_sorted_prank.tsv
+
+
+# OG      Num_species_with_sig_gene       Species
+# OG0005531_tree.txt_prank_unique.nxh.ABSREL.json 3       Coch,Oxyria,Draba
+# OG0011114_tree.txt_prank_unique.nxh.ABSREL.json 3       Coch,Dryas,Oxyria
+# OG0011456_tree.txt_prank_unique.nxh.ABSREL.json 3       Dryas,Oxyria,Draba
+# OG0012809_tree.txt_prank_unique.nxh.ABSREL.json 3       Coch,Dryas,Draba
+# OG0000886_tree.txt_prank_unique.nxh.ABSREL.json 2       Coch,Dryas
+# OG0000896_tree.txt_prank_unique.nxh.ABSREL.json 2       Coch,Draba
+# OG0001197_tree.txt_prank_unique.nxh.ABSREL.json 2       Oxyria,Draba
+# OG0001403_tree.txt_prank_unique.nxh.ABSREL.json 2       Coch,Oxyria
+# OG0001639_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Oxyria
+# OG0002655_tree.txt_prank_unique.nxh.ABSREL.json 2       Coch,Dryas
+# OG0002705_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Oxyria
+# OG0002842_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Draba
+# OG0003138_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Draba
+# OG0003752_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Draba
+# OG0003915_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Draba
+# OG0003943_tree.txt_prank_unique.nxh.ABSREL.json 2       Dryas,Oxyria
+# OG0003944_tree.txt_prank_unique.nxh.ABSREL.json 2       Oxyria,Draba
+# OG0003965_tree.txt_prank_unique.nxh.ABSREL.json 2       Coch,Dryas
+
+
+grep OG0011456 OG_paralogs_species_counts_sorted.tsv
+#OG0011456_tree.txt_unique.nxh.ABSREL.json       1       Oxyria
+
+grep OG0011456 OG_single_copy_species_counts_sorted.tsv
+#OG0011456_tree.txt_unique.nxh.ABSREL.json       1       Oxyria
+
+grep OG0012809  OG_paralogs_species_counts_sorted.tsv
+# OG0012809_tree.txt_unique.nxh.ABSREL.json       1       Dryas
+
+#-------------------------
+# Get counts of each value
+
+# total 16401 OGs tested
+awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
+ OG_paralogs_species_counts_sorted.tsv
+# 1 3382
+# 2 339
+# 3 21
+# 4 1
+
+awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
+ OG_single_copy_species_counts_sorted.tsv
+# 1 1501
+# 2 149
+# 3 13
+
+
+# total 4053 OG tested
+awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
+ OG_paralogs_species_counts_sorted_prank.tsv
+# 1 2007
+# 2 144
+# 3 4
+
+awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
+ OG_single_copy_species_counts_sorted_prank.tsv
+# 1 872
+# 2 61
+# 3 2
+
+###################
+# Per species counts
+
+grep -c 'Coch' OG_single_copy_species_counts_sorted_prank.tsv
+grep -c 'Dryas' OG_single_copy_species_counts_sorted_prank.tsv
+grep -c 'Oxyria' OG_single_copy_species_counts_sorted_prank.tsv
+grep -c 'Draba' OG_single_copy_species_counts_sorted_prank.tsv
+# 128
+# 437
+# 172
+# 263
+
+grep -c 'Coch' OG_paralogs_species_counts_sorted_prank.tsv
+grep -c 'Dryas' OG_paralogs_species_counts_sorted_prank.tsv
+grep -c 'Oxyria' OG_paralogs_species_counts_sorted_prank.tsv
+grep -c 'Draba' OG_paralogs_species_counts_sorted_prank.tsv
+# 320
+# 842
+# 426
+# 719
+
+grep -c 'Coch' OG_single_copy_species_counts_sorted.tsv
+grep -c 'Dryas' OG_single_copy_species_counts_sorted.tsv
+grep -c 'Oxyria' OG_single_copy_species_counts_sorted.tsv
+grep -c 'Draba' OG_single_copy_species_counts_sorted.tsv
+# 280
+# 748
+# 314
+# 496
+
+grep -c 'Coch' OG_paralogs_species_counts_sorted.tsv
+grep -c 'Dryas' OG_paralogs_species_counts_sorted.tsv
+grep -c 'Oxyria' OG_paralogs_species_counts_sorted.tsv
+grep -c 'Draba' OG_paralogs_species_counts_sorted.tsv
+# 672
+# 1449
+# 751
+# 1255
+
+
+
+
+
+#---------------------
+# random chance? - yes
+
+# 3382×1+339×2+21×3+1×4=4127
+# 16401×4=65604
+# p=4127/65604≈0.063
+
+# species	observed	expected
+# 0	12658	12629
+# 1	3382	3395
+# 2	339	345
+# 3	21	17
+# 4	1	0.27
+
+# p≈0.37
+
+# p>0.05
+
+#-------------------
+# 2007×1+144×2+4×3=2007+288+12=2307
+# 4053×4=16212
+# p=2307/16212≈0.142
+
+# species	observed	expected
+# 1	2007	3185
+# 2	144	790
+# 3	4	89
+# 4	0	4
+
+# Expect more overlap by random chance
+# p<10−16
+
+# PRANK is removing alignment-driven false positives
 
 
 ##########################

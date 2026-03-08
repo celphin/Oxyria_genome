@@ -21,7 +21,26 @@ tmux attach-session -t total
 module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
 
 ##########################
+# Copy trees from Arctic folder back up to main to rerun with non-Arctic
 
+tmux attach-session -t backup1
+ls *_tree.txt | wc -l
+#14602
+ls *_tree.txt_pal2nal.fasta | wc -l
+# 3993
+
+cp OG*_tree.txt ..
+cp OG*_tree.txt_pal2nal.fasta ..
+
+cd ..
+ls *_tree.txt | wc -l
+ls *_tree.txt_pal2nal.fasta | wc -l
+
+# 23145
+# 23145
+
+
+############################
 # Check gene  names for closest non-Arctic relatives
 
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/CDS
@@ -107,114 +126,72 @@ grep ">" Arabidopsis_lyrata.f*
 # >LOC9329195
 # >LOC9326476
 
-###########################
-# Copy trees from Arctic folder back up to main to rerun with non-Arctic
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/CDS
 
-tmux attach-session -t backup1
-ls *_tree.txt | wc -l
-#14602
-ls *_tree.txt_pal2nal.fasta | wc -l
-# 3993
+grep ">" Arabis_alpina.f* | sed 's/>//' > foreground_genes.txt
+grep ">" Prunus_persica.f* | sed 's/>//' >> foreground_genes.txt
+grep ">" Rheum_nobile_H0.f* | sed 's/>//' >> foreground_genes.txt
+grep ">" Arabidopsis_lyrata.f* | sed 's/>//' >> foreground_genes.txt
 
-cp OG*_tree.txt ..
-cp OG*_tree.txt_pal2nal.fasta ..
 
-cd ..
-ls *_tree.txt | wc -l
-ls *_tree.txt_pal2nal.fasta | wc -l
+mv foreground_genes.txt /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
 
-# 23145
-# 23145
-
-#------------------------------------
-# Add {Foreground} label to nonArctic branches
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
 
-# Check one
-sed -E '
-   s/(DoctH0_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
-   s/(Oxyria_NCBI_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
-   s/((maker|snap_masked)-[^:(),]+)(:)/\1{Foreground}\3/g;
-   s/(g[0-9]+\.t[0-9]+)(:)/\1{Foreground}\2/g
-   ' OG0011565_tree.txt
+sort -u foreground_genes.txt > foreground_genes_unique.txt
 
-# (((((((TAV2_LOCUS4956:0.073246,
-# g11872.t1{Foreground}:0.137256):0.004606,
-# 106302034:0.077317):0.039058,(
-# LOC17883196:0.049298,
-# LOC9310397:0.078487):0.06136):0.021773,
-# maker-lg2-snap-gene-43.209-mRNA-1{Foreground}:0.22099):0.06837,
-# g18107.t1{Foreground}:0.296852):0.343242,(((
-# LOC133722319:0.036233,(
-# 101294573:0.037006,
-# LOC126799020:0.08705):0.007216):0.232907,
-# DoctH0_Chr600000802{Foreground}:0.12274):0.007824,((
-# LOC125470047:0.016387,
-# LOC126593297:0.006243):0.144526,
-# LOC18773133:0.102506):0.061272):0.228821):0.100199,(((((
-# RtaG0011728.1:3.23998e-06,
-# RtaG0015792.1:0.003127):0.000655,
-# RnoG0007103.1:0.002416):0.026212,
-# Polavi_Chr600001874:0.061237):0.033667,
-# Oxyria_NCBI_Chr700002490{Foreground}:0.203675):0.010222,(
-# FT01Gene17735.t1:0.017668,
-# FEHAP213745.t1:0.0169):0.101281):0.100199);
+#------------------------------------
+# Add {Foreground} label to Arctic branches
 
-#------------------------
-# run for all
+# Narval1
+tmux new-session -s total
+tmux attach-session -t total
+
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
 
 for f in *tree.txt
 do
-    # Check if tree contains at least one Arctic gene
-    if grep -Eq 'DoctH0_Chr|Oxyria_NCBI_Chr|maker-|snap_masked-|g[0-9]+\.t[0-9]+' "$f"
-    then
-        sed -E '
-        s/(DoctH0_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
-        s/(Oxyria_NCBI_Chr[^:(),]+)(:)/\1{Foreground}\2/g;
-        s/((maker|snap_masked)-[^:(),]+)(:)/\1{Foreground}\3/g;
-        s/(g[0-9]+\.t[0-9]+)(:)/\1{Foreground}\2/g
-        ' "$f" > "${f}_HyPhy_nonArctic.txt"
-    fi
+    echo "Processing $f"
+
+    awk '
+    NR==FNR {fg[$1]=1; next}
+
+    {
+        line=$0
+        out=""
+        pos=1
+
+        while (match(substr(line,pos), /[^:(),]+:/)) {
+            start = pos + RSTART - 1
+            end = start + RLENGTH - 2
+            gene = substr(line, start, RLENGTH-1)
+
+            out = out substr(line, pos, RSTART-1)
+
+            if (gene in fg)
+                out = out gene "{Foreground}:"
+            else
+                out = out gene ":"
+
+            pos = start + RLENGTH
+        }
+
+        out = out substr(line,pos)
+        print out
+    }
+    ' foreground_genes_unique.txt "$f" > "${f}_HyPhy_nonArctic.txt"
+
 done
 
 ls *_HyPhy_nonArctic.txt | wc -l
-#19,152
+# 23145
 
+################################
+# Remove new trees without Foreground branches
+grep -L "{Foreground}" *_HyPhy_nonArctic.txt | xargs rm
 
-########################
-# Run remove duplicates script test
-#  download script
-
-module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
-
-wget https://raw.githubusercontent.com/veg/hyphy-analyses/master/remove-duplicates/remove-duplicates.bf
-chmod +x remove-duplicates.bf
-
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/
-
-# test
-hyphy remove-duplicates.bf --msa OG0011565_tree.txt_pal2nal.fasta --tree OG0011565_tree.txt_HyPhy_nonArctic.txt --output OG0011565_tree.txt_unique_nonArctic.nxh
-
-#####################
-# Run absrel test
-# https://hyphy.org/tutorials/CL-prompt-tutorial/
-# Enter 1 for "Selection Analyses", and then 6 for "aBSREL"
-# Enter 1 to select the Universal genetic code.
-# Select a coding sequence alignment file: 
-
-#---------------
-# Automatic command line test
-
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/nonArctic_trees
-
-hyphy absrel  --alignment OG0011565_tree.txt_unique_nonArctic.nxh --branches FOREGROUND
-# * DOCTH0_CHR600000802, p-value =  0.01770
-# * DOCTH0_CHR600000802, p-value =  0.00557 # with foreground
-
-hyphy relax  --alignment OG0011565_tree.txt_unique_nonArctic.nxh --branches FOREGROUND
-# Check errors.log for execution error details.
-
+ls *_HyPhy_nonArctic.txt | wc -l
+# 18779
 
 ##################################
 # loop through orthogroups that include nonArctic spp 
@@ -254,16 +231,11 @@ done > filtered_tree_list_nonArctic.txt
 
 # check count
 wc -l filtered_tree_list_nonArctic.txt
-# 16401 filtered_tree_list.txt
 
-#--------------------------
-# check commands
-hyphy absrel --help
+# 16401 filtered_tree_list.txt (Arctic)
+# 16176 filtered_tree_list_nonArctic.txt
 
-wc -l  filtered_tree_list_nonArctic.txt
-#16401
-
-
+#----------------------
 # use nano to import text
 cat << EOF > absrel_array_nonArctic.sh
 #!/bin/bash
@@ -272,8 +244,8 @@ cat << EOF > absrel_array_nonArctic.sh
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=32G
-#SBATCH --output=logs/absrel_%A_%a.out
-#SBATCH --error=logs/absrel_%A_%a.err
+#SBATCH --output=logs/absrel_nonArc_%A_%a.out
+#SBATCH --error=logs/absrel_nonArc_%A_%a.err
 
 module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 hyphy/2.5.49
 
@@ -322,240 +294,290 @@ EOF
 chmod +x absrel_array_nonArctic.sh
 dos2unix absrel_array_nonArctic.sh
 
-sbatch --array=1-850%100 absrel_array_nonArctic.sh
+cp Arctic_trees/remove-duplicates.bf .
 
-ls *nxh
-ls *json
-
-
+sbatch --array=1-809%100 absrel_array_nonArctic.sh
+# Submitted batch job 57490810
 
 ###############################
 # Checking results
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
 
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/nonArctic_trees
-
-ls *ABSREL.json | wc -l
-# 16328
+ls *_unique_nonArctic.nxh |wc -l
+# 16176
+ls *_unique_nonArctic.nxh.ABSREL.json | wc -l 
+# 16044
 
 ##########################
 # Which orthogroups are demonstrating positive selection
 
 # look for found **1** branches under selection among **39** tested
 
-for f in *ABSREL.json; do
+for f in *_unique_nonArctic.nxh.ABSREL.json; do
   jq -r --arg file "$f" \
     '$file + "\t" + (.["test results"]["positive test results"]|tostring) + "\t" + (.["test results"].tested|tostring)' "$f"
 done >> Total_ABSREL_results_nonArctic.txt
 
 wc -l Total_ABSREL_results_nonArctic.txt
-#16254 Total_ABSREL_results.txt
+#16254 Total_ABSREL_results.txt (Arctic)
+# 15975 Total_ABSREL_results_nonArctic.txt
 
 # filter for only those with positive selection
-awk '$2 != 0' Total_ABSREL_results.txt | sort -k2,2nr > ABSREL_nonzero_sorted_nonArctic.txt
+awk '$2 != 0' Total_ABSREL_results_nonArctic.txt | sort -k2,2nr > ABSREL_nonzero_sorted_nonArctic.txt
 
 wc -l ABSREL_nonzero_sorted_nonArctic.txt
 # 4076 ABSREL_nonzero_sorted.txt
+# 2696 ABSREL_nonzero_sorted_nonArctic.txt
 
 more ABSREL_nonzero_sorted_nonArctic.txt
 
-# OG0015441_tree.txt_unique.nxh.ABSREL.json       6       10
-# OG0002756_tree.txt_unique.nxh.ABSREL.json       5       12
-# OG0004437_tree.txt_unique.nxh.ABSREL.json       4       5
-# OG0005531_tree.txt_unique.nxh.ABSREL.json       4       6
-# OG0005857_tree.txt_unique.nxh.ABSREL.json       4       20
-# OG0012691_tree.txt_unique.nxh.ABSREL.json       4       18
-# OG0012770_tree.txt_unique.nxh.ABSREL.json       4       4
-# OG0013538_tree.txt_unique.nxh.ABSREL.json       4       12
-# OG0014351_tree.txt_unique.nxh.ABSREL.json       4       8
-# OG0015407_tree.txt_unique.nxh.ABSREL.json       4       10
-# OG0015559_tree.txt_unique.nxh.ABSREL.json       4       10
-# OG0016078_tree.txt_unique.nxh.ABSREL.json       4       7
-# OG0017813_tree.txt_unique.nxh.ABSREL.json       4       7
-# OG0018973_tree.txt_unique.nxh.ABSREL.json       4       5
-# OG0020180_tree.txt_unique.nxh.ABSREL.json       4       5
-# OG0020223_tree.txt_unique.nxh.ABSREL.json       4       5
-# OG0020857_tree.txt_unique.nxh.ABSREL.json       4       5
-# OG0020866_tree.txt_unique.nxh.ABSREL.json       4       5
-# OG0022631_tree.txt_unique.nxh.ABSREL.json       4       4
-# OG0022756_tree.txt_unique.nxh.ABSREL.json       4       4
+mv ABSREL_nonzero_sorted_nonArctic.txt ABSREL_nonArctic_nonzero_sorted.txt
 
+#########################
+# Fix names for nonArctic below here
+#---------------------
+# Check for paralogs
 
-more OG0001467_tree.txt_unique_nonArctic.nxh.ABSREL.json
-     # "DOCTH0_CHR100000472":"test",
-     # "DOCTH0_CHR600001113":"test",
-     # "G10838_T1":"test",
-     # "G21743_T1":"test",
-     # "G29482_T1":"test",
-     # "MAKER_LG2_SNAP_GENE_0_246_MRNA_1":"test",
-     # "MAKER_LG6_SNAP_GENE_73_102_MRNA_1":"test",
-     # "OXYRIA_NCBI_CHR300002584":"test",
-     # "OXYRIA_NCBI_CHR300005439":"test",
-     # "OXYRIA_NCBI_CHR500005514":"test",
-     # "OXYRIA_NCBI_CHR500005515":"test",
-     # "OXYRIA_NCBI_CHR600004621":"test",
+echo -e "file\tgene\tcorrected_p\tfull_adaptive_model\tnonsyn_subs\tsyn_subs" > all_genes_nonArctic.tsv
 
-    # "OXYRIA_NCBI_CHR500005515":{
-       # "Baseline MG94xREV":0.009652149439954898,
-       # "Baseline MG94xREV omega ratio":0.5730726983670508,
-       # "Corrected P-value":1.984387007775146e-05,
-
-    # "OXYRIA_NCBI_CHR500005514":{
-       # "Baseline MG94xREV":0.01302162728218238,
-       # "Baseline MG94xREV omega ratio":1.44760088866469,
-       # "Corrected P-value":1.831867990631508e-12,
-
-     # "DOCTH0_CHR100000472":{
-       # "Baseline MG94xREV":0.05141586457768321,
-       # "Baseline MG94xREV omega ratio":0.1372979321207887,
-       # "Corrected P-value":0.04545651860136113,
-
-# find genes that have a P-value less than 0.05
-
-jq -r '
-  .["branch attributes"]["0"]
-  | to_entries[]
-  | select(.value["Corrected P-value"] < 0.05)
-  | "\(.key)\t\(.value["Corrected P-value"])"
-' OG0015441_tree.txt_unique.nxh.ABSREL.json
-
-# DOCTH0_CHR300006814     0.0004372556584134046
-# DOCTH0_CHR400000398     0.02450561644103588
-# DOCTH0_CHR400001723     0.04809666165521614
-# DOCTH0_CHR500000225     0.004120137030874105
-# DOCTH0_CHR800006070     0.02062170869551722
-# DOCTH0_CHR900001109     0.0003764289048757696
-# NODE10  null
-# NODE14  null
-# NODE16  null
-# NODE4   null
-# NODE9   null
-
-# to run for all OG
 while read file _; do
   jq -r '
     .["branch attributes"]["0"]
     | to_entries[]
-    | select(.value["Corrected P-value"] < 0.05)
-    | "'"$file"'\t\(.key)\t\(.value["Corrected P-value"])"
+    | [
+        "'"$file"'",
+        .key,
+        (.value["Corrected P-value"] // "NA"),
+        (.value["Full adaptive model"] // "NA"),
+        (.value["Full adaptive model (non-synonymous subs/site)"] // "NA"),
+        (.value["Full adaptive model (synonymous subs/site)"] // "NA")
+      ] | @tsv
   ' "$file"
-done <  ABSREL_nonzero_sorted.txt > all_significant_genes.tsv
+done < ABSREL_nonArctic_nonzero_sorted.txt >> all_genes_nonArctic.tsv
 
+# Find only the orthogroups with a p-value greater than 0.05 and 
+# only one gene from that species in that group
 
-###########################
-# Look at GO terms for significant genes
-
-# Join all_significant_genes.tsv with interproscan data
-# Total_interproscan_output_edited3.tsv .
-
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology
-
-cp /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees/all_significant_genes.tsv . 
-
-# Check combined Interproscan file 
-wc -l Total_interproscan_output_edited3.tsv
-# 109117 Total_interproscan_output_edited3.tsv
-
-awk -F'\t' '$NF != "null"' all_significant_genes.tsv > all_significant_genes_filtered.tsv
-
-wc -l all_significant_genes_filtered.tsv
-# 4909 all_significant_genes_filtered.tsv
-
-# OG0004437_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR600004047     0.00002416028697815875
-# OG0004437_tree.txt_unique.nxh.ABSREL.json       MAKER_LG5_SNAP_GENE_54_112_MRNA_1       0
-# OG0004437_tree.txt_unique.nxh.ABSREL.json       OXYRIA_NCBI_CHR300001420        0
-
-# OG0005531_tree.txt_unique.nxh.ABSREL.json       G20420_T1       0.01611781191827699
-# OG0005531_tree.txt_unique.nxh.ABSREL.json       OXYRIA_NCBI_CHR500003522        0.03522219318626585
-# OG0005531_tree.txt_unique.nxh.ABSREL.json       SNAP_MASKED_LG5_PROCESSED_GENE_102_35_MRNA_1    0.0354711
-
-
-# OG0004910_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR900003875     0.03651363647255934
-# OG0004910_tree.txt_unique.nxh.ABSREL.json       MAKER_LG2_SNAP_GENE_64_140_MRNA_1       0.005872506338468753
-# OG0004910_tree.txt_unique.nxh.ABSREL.json       OXYRIA_NCBI_CHR700000069        0.04587116189169627
-
-# OG0005895_tree.txt_unique.nxh.ABSREL.json       DOCTH0_CHR900005879     0.03160461924412528
-# OG0005895_tree.txt_unique.nxh.ABSREL.json       MAKER_LG5_SNAP_GENE_93_221_MRNA_1       0.03741486493303303
-# OG0005895_tree.txt_unique.nxh.ABSREL.json       OXYRIA_NCBI_CHR700003176        0.04260344430396246
-
-#----------------------------
-# Check which OG have more than one species
-
-
-awk '
+awk -F'\t' '
+BEGIN {
+    OFS="\t"
+    # Define species
+    species_list[1]="Rhuem"
+    species_list[2]="LOC"
+    species_list[3]="Arabis"
+    species_list[4]="Other"
+}
+NR==1 {
+    # Save header
+    header = $0
+    next
+}
 {
-    og = $1
-    gene = $2
+    # Assign species based on gene ID
+    if ($2 ~ /^RNOG/) species="Rhuem"
+    else if ($2 ~ /^LOC/) species="LOC"
+    else if ($2 ~ /^AALP_/) species="Arabis"
+    else species="Other"
 
-    if (gene ~ /^OXYRIA/) species="Oxyria"
-    else if (gene ~ /^DOCT/) species="Dryas"
-    else if (gene ~ /^G[0-9]+_T/) species="Cochgroen"
-    else species="Draba"
+    # Count all genes per OG per species (for exclusion)
+    all_count[$1,species]++
 
-    key = og SUBSEP species
-    seen[key] = 1
+    # Only keep significant genes for output
+    if ($3 < 0.05) {
+        genes[$1] = genes[$1] $0 "\n"
+        species_per_OG[$1][species]=1
+    }
 }
-
 END {
-    for (k in seen) {
-        split(k, a, SUBSEP)
-        og = a[1]
-        species = a[2]
+    single_copy_file="OG_single_copy_significant_nonArctic.tsv"
+    gene_names_file="OG_single_copy_significant_gene_names_nonArctic.txt"
+    uniqueOG_file="OG_single_copy_significant_uniqueOG_nonArctic.txt"
+    species_counts_file="OG_single_copy_species_counts_nonArctic.txt"
 
-        if (!(og in species_count)) {
-            species_count[og] = 0
-            species_list[og] = species
-        } else if (species_list[og] !~ species) {
-            species_list[og] = species_list[og] "," species
+    # Header for single-copy file
+    print header > single_copy_file
+
+    # Header for species count summary
+    print "OG", "Num_species_with_sig_gene", "Species" > species_counts_file
+
+    for (og in genes) {
+        exclude=0
+        # Exclude OGs if any species has >1 gene (total genes, not only significant)
+        for (i=1;i<=4;i++) {
+            s=species_list[i]
+            if (all_count[og,s]>1) {exclude=1; break}
         }
 
-        species_count[og]++
-    }
+        if (!exclude) {
+            # Save OG lines
+            printf "%s", genes[og] >> single_copy_file
 
-    for (og in species_count) {
-        if (species_count[og] > 1) {
-            print og "\t" species_count[og] "\t" species_list[og]
+            # Save gene names
+            split(genes[og], lines, "\n")
+            for (i in lines) if (lines[i] != "") {
+                split(lines[i], fields, FS)
+                print fields[2] >> gene_names_file
+            }
+
+            # Unique OG list
+            print og >> uniqueOG_file
+
+            # Species counts summary (fixed order)
+            n=0; species_list_str=""
+            for (j=1;j<=4;j++) {
+                s=species_list[j]
+                if (species_per_OG[og][s]) {
+                    n++
+                    species_list_str = species_list_str ? species_list_str "," s : s
+                }
+            }
+            print og, n, species_list_str >> species_counts_file
         }
     }
+
+    # Sort species counts descending by number of species
+    system("head -n 1 " species_counts_file " > tmp_header && tail -n +2 " species_counts_file " | sort -k2,2nr >> tmp_header && mv tmp_header \
+	OG_single_copy_species_counts_sorted_nonArctic.tsv")
 }
-' all_significant_genes_filtered.tsv | sort > OGs_multi_species.tsv
+' all_genes_nonArctic.tsv
+
+more OG_single_copy_species_counts_sorted_nonArctic.tsv
+# OG      Num_species_with_sig_gene       Species
+# OG0018292_tree.txt_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG0018370_tree.txt_unique_nonArctic.nxh.ABSREL.json     1       LOC
+# OG0019695_tree.txt_unique_nonArctic.nxh.ABSREL.json     1       LOC
+# OG0022997_tree.txt_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
 
 
-sort -t$'\t' -k2,2nr OGs_multi_species.tsv > OGs_multi_species.sorted.tsv
+#---------------------------------
+awk -F'\t' '
+BEGIN {
+    OFS="\t"
+    # Define species
+    species_list[1]="Rhuem"
+    species_list[2]="LOC"
+    species_list[3]="Arabis"
+    species_list[4]="Other"
+}
+NR==1 {
+    # Save header
+    header = $0
+    next
+}
+{
+    # Only keep significant genes
+    if ($3 >= 0.05) next
 
+    # Assign species based on gene ID
+    if ($2 ~ /^RNOG/) species="Rhuem"
+    else if ($2 ~ /^LOC/) species="LOC"
+    else if ($2 ~ /^AALP_/) species="Arabis"
+    else species="Other"
 
-OG0005531_tree.txt_unique.nxh.ABSREL.json       4       Cochgroen,Draba,Dryas,Oxyria
-OG0004358_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0004437_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
-OG0004910_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Oxyria
-OG0005895_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Oxyria,Draba
-OG0007028_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Draba,Oxyria
-OG0007601_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0008262_tree.txt_unique.nxh.ABSREL.json       3       Draba,Cochgroen,Dryas
-OG0008518_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Oxyria
-OG0008574_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Cochgroen
-OG0009332_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0009474_tree.txt_unique.nxh.ABSREL.json       3       Draba,Oxyria,Dryas
-OG0009836_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Cochgroen,Dryas
-OG0009890_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Dryas
-OG0009938_tree.txt_unique.nxh.ABSREL.json       3       Cochgroen,Dryas,Draba
-OG0011085_tree.txt_unique.nxh.ABSREL.json       3       Cochgroen,Draba,Oxyria
-OG0011114_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Dryas,Cochgroen
-OG0011174_tree.txt_unique.nxh.ABSREL.json       3       Oxyria,Draba,Cochgroen
-OG0012177_tree.txt_unique.nxh.ABSREL.json       3       Draba,Cochgroen,Dryas
-OG0012361_tree.txt_unique.nxh.ABSREL.json       3       Draba,Oxyria,Dryas
-OG0013353_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0013973_tree.txt_unique.nxh.ABSREL.json       3       Dryas,Cochgroen,Draba
-OG0014460_tree.txt_unique.nxh.ABSREL.json       3       Draba,Dryas,Cochgroen
+    # Count genes per OG per species
+    count[$1,species]++
+    # Store line per OG
+    genes[$1] = genes[$1] $0 "\n"
+    # Track species per OG
+    species_per_OG[$1][species]=1
+}
+END {
+    # Output single-copy significant genes
+    single_copy_file="OG_paralogs_significant_nonArctic.tsv"
+    gene_names_file="OG_paralogs_significant_gene_names_nonArctic.txt"
+    uniqueOG_file="OG_paralogs_significant_uniqueOG_nonArctic.txt"
+    species_counts_file="OG_paralogs_species_counts_nonArctic.txt"
 
+    # Header for single-copy file
+    print header > single_copy_file
 
-grep OG0005531 InterProscan_ABSREL_sig_genes.tsv
+    # Header for species count summary
+    print "OG", "Num_species_with_sig_gene", "Species" > species_counts_file
 
-# OG0005531       DOCTH0_CHR200004771     0.00612228594200048     Dryas_octopetala_interproscan_output.tsv        IPR007034,IPR012948,IPR027417,IPR030387,IPR037875,IPR039761  C-terminal, N-terminal,AARP2CN,Bms1/Tsr1-type G domain,P-loop containing nucleoside triphosphate hydrolase,Ribosome biogenesis protein Bms1,Ribosome biogenesis protein Bms1/Tsr1,Ribosome biogenesis protein BMS1/TSR1    GO:0005525,GO:0005634,GO:0042254
-# OG0005531       G20420_T1       0.016117811918277       NA      NA      NA      NA
-# OG0005531       OXYRIA_NCBI_CHR500003522        0.0352221931862658      Oxyria_digyna_H1_interproscan_output.tsv        IPR007034,IPR012948,IPR027417,IPR030387,IPR037875,IPR039761  C-terminal, N-terminal,AARP2CN,Bms1/Tsr1-type G domain,P-loop containing nucleoside triphosphate hydrolase,Ribosome biogenesis protein Bms1,Ribosome biogenesis protein Bms1/Tsr1,Ribosome biogenesis protein BMS1/TSR1    GO:0005525,GO:0005634,GO:0042254
-# OG0005531       SNAP_MASKED_LG5_PROCESSED_GENE_102_35_MRNA_1    0.0354711550003797      NA      NA      NA      NA
+    for (og in genes) {
+        exclude=0
+        # Check if any species has >1 gene in this OG
+        for (i=1;i<=4;i++) {
+            s=species_list[i]
+            if (count[og,s]>1) {exclude=1; break}
+        }
+        if (!exclude) {
+            # Save OG lines
+            printf "%s", genes[og] >> single_copy_file
 
-# Ribosome biogenesis protein
+            # Save gene names
+            split(genes[og], lines, "\n")
+            for (i in lines) if (lines[i] != "") {
+                split(lines[i], fields, FS)
+                print fields[2] >> gene_names_file
+            }
+
+            # Unique OG list
+            print og >> uniqueOG_file
+
+            # Species counts summary
+            n=0; species_list_str=""
+            for (s in species_per_OG[og]) {
+                n++
+                species_list_str = species_list_str ? species_list_str "," s : s
+            }
+            print og, n, species_list_str >> species_counts_file
+        }
+    }
+
+    # Sort species counts descending by number of species
+    system("head -n 1 " species_counts_file " > tmp_header && tail -n +2 " species_counts_file " | sort -k2,2nr >> tmp_header && \
+	mv tmp_header OG_paralogs_species_counts_sorted_nonArctic.tsv")
+}
+' all_genes_nonArctic.tsv
+
+more OG_paralogs_species_counts_sorted_nonArctic.tsv
+
+# OG      Num_species_with_sig_gene       Species
+# OG0007401_tree.txt_unique_nonArctic.nxh.ABSREL.json     3       Rhuem,LOC,Arabis
+# OG0013935_tree.txt_unique_nonArctic.nxh.ABSREL.json     3       Rhuem,LOC,Arabis
+# OG0000510_tree.txt_unique_nonArctic.nxh.ABSREL.json     2       Rhuem,LOC
+# OG0000579_tree.txt_unique_nonArctic.nxh.ABSREL.json     2       Rhuem,Arabis
+# OG0000847_tree.txt_unique_nonArctic.nxh.ABSREL.json     2       LOC,Arabis
+
+################################
+# Get counts of each value
+
+# total XX OGs tested
+awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
+ OG_paralogs_species_counts_sorted_nonArctic.tsv
+# 1 2358
+# 2 114
+# 3 2
+
+awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
+ OG_single_copy_species_counts_sorted_nonArctic.tsv
+# 1 4
+
+# Because not splitting LOC genes so all look like paralogs
+
+###################
+# Per species counts
+
+grep -c 'LOC' OG_single_copy_species_counts_sorted_nonArctic.tsv
+grep -c 'Rheum' OG_single_copy_species_counts_sorted_nonArctic.tsv
+grep -c 'Arabis' OG_single_copy_species_counts_sorted_nonArctic.tsv
+grep -c 'Other' OG_single_copy_species_counts_sorted_nonArctic.tsv
+# 2
+# 0
+# 0
+# 0
+
+grep -c 'LOC' OG_paralogs_species_counts_sorted_nonArctic.tsv
+grep -c 'Rhuem' OG_paralogs_species_counts_sorted_nonArctic.tsv
+grep -c 'Arabis' OG_paralogs_species_counts_sorted_nonArctic.tsv
+grep -c 'Other' OG_paralogs_species_counts_sorted_nonArctic.tsv
+# 1024
+# 1088
+# 480
+# 0
+
+# ~ 500 genes per species
 
 ##########################
 # Join files in R 
