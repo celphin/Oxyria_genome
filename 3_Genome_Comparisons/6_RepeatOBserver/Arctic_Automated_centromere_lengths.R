@@ -46,197 +46,370 @@ module load StdEnv/2023 r/4.5.0
 
 R
 
-library(RepeatOBserverV1) 
+############################################################
+# Libraries
+############################################################
+
+library(RepeatOBserverV1)
 library(zoo)
 library(dplyr)
+library(stringr)
+library(ChemoSpecUtils)
 
-# Function
+############################################################
+# Helper functions
+############################################################
 
-calculate_centromeres <- function(fname,
-                                  outpath,
-                                  Shannon_bin_size = 800,
-                                  Shannon_SD = 1.5,
-                                  Rep_bin_size = 200,
-                                  Rep_SD = 1.5,
-                                  min_region_length = 1e6) {
+read_two_col <- function(files, value_name) {
 
+  bind_rows(lapply(files, function(f) {
 
-  message("Processing: ", fname)
+    df <- read.table(f, header = FALSE)
 
-  summary_path <- file.path(outpath,"Summary_output/output_data")
-  file_list <- list.files(summary_path, full.names = TRUE)
-
-  # ---------------------------
-  # READ REPEAT DATA
-  # ---------------------------
-
-  repeat_files <- file_list[grepl("Repeat_abundance_sum", file_list)]
-
-  repeat_list <- lapply(repeat_files, read.table)
-
-  names(repeat_list) <- gsub(".*_(Chr[0-9]+).*", "\\1",
-                             basename(repeat_files))
-
-  Repeat_total <- bind_rows(repeat_list, .id = "Chr")
-
-  colnames(Repeat_total) <- c("Chromosome",
-                              "Genome_position",
-                              "RepeatAbundance")
-
-  Repeat_total$Genome_position <- as.numeric(Repeat_total$Genome_position)
-  Repeat_total$RepeatAbundance <- as.numeric(Repeat_total$RepeatAbundance)
-
-  results <- list()
-
-  # ===========================
-  # PER CHROMOSOME ANALYSIS
-  # ===========================
-
-  for (chr in unique(Repeat_total$Chromosome)) {
-
-    df <- Repeat_total %>%
-      filter(Chromosome == chr) %>%
-      arrange(Genome_position)
-
-    # Rolling mean
-    df$roll <- rollmean(df$RepeatAbundance,
-                        k = Rep_bin_size,
-                        fill = NA,
-                        align = "center")
-
-    # Z-score (more stable than mean±SD alone)
-    df$z <- (df$roll - mean(df$roll, na.rm=TRUE)) /
-            sd(df$roll, na.rm=TRUE)
-
-    # Detect dips
-    dip <- df$z <= -Rep_SD
-
-    # Run length encoding (fast edge detection)
-    r <- rle(dip)
-    ends <- cumsum(r$lengths)
-    starts <- ends - r$lengths + 1
-
-    for (i in which(r$values)) {
-
-      start_pos <- df$Genome_position[starts[i]]
-      end_pos   <- df$Genome_position[ends[i]]
-
-      region_length <- end_pos - start_pos
-
-      if (!is.na(region_length) &&
-          region_length >= min_region_length) {
-
-        results[[length(results)+1]] <-
-          data.frame(Spp = fname,
-                     Chr = chr,
-                     Method = "Repeat",
-                     Start = start_pos,
-                     End = end_pos,
-                     Length = region_length)
-      }
+    if (ncol(df) != 2) {
+      stop(paste("File does not have 2 columns:", f))
     }
-  }
 
-  # ---------------------------
-  # SHANNON ANALYSIS
-  # ---------------------------
+    colnames(df) <- c("Genome_position", value_name)
 
-  shannon_files <- file_list[grepl("Shannon", file_list)]
+    chr <- str_extract(basename(f), "Chr[0-9]+")
 
-  if (length(shannon_files) > 0) {
-
-    shannon_list <- lapply(shannon_files, read.table)
-    names(shannon_list) <- gsub(".*_(Chr[0-9]+).*",
-                                "\\1",
-                                basename(shannon_files))
-
-    Shannon_total <- bind_rows(shannon_list, .id="Chr")
-    colnames(Shannon_total) <- c("Chromosome",
-                                "Genome_position",
-                                "Shannon")
-
-    Shannon_total$Genome_position <- as.numeric(Shannon_total$Genome_position)
-    Shannon_total$Shannon <- as.numeric(Shannon_total$Shannon)
-
-    for (chr in unique(Shannon_total$Chromosome)) {
-
-      df <- Shannon_total %>%
-        filter(Chromosome == chr) %>%
-        arrange(Genome_position)
-
-      df$roll <- rollmean(df$Shannon,
-                          k = Shannon_bin_size,
-                          fill=NA,
-                          align="center")
-
-      df$z <- (df$roll - mean(df$roll, na.rm=TRUE)) /
-              sd(df$roll, na.rm=TRUE)
-
-      valley <- df$z <= -Shannon_SD
-
-      r <- rle(valley)
-      ends <- cumsum(r$lengths)
-      starts <- ends - r$lengths + 1
-
-      for (i in which(r$values)) {
-
-        start_pos <- df$Genome_position[starts[i]]
-        end_pos   <- df$Genome_position[ends[i]]
-
-        region_length <- end_pos - start_pos
-
-        if (!is.na(region_length) &&
-            region_length >= min_region_length) {
-
-          results[[length(results)+1]] <-
-            data.frame(Spp = fname,
-                       Chr = chr,
-                       Method = "Shannon",
-                       Start = start_pos,
-                       End = end_pos,
-                       Length = region_length)
-        }
-      }
+    if (is.na(chr)) {
+      stop(paste("Cannot extract chromosome from filename:", f))
     }
-  }
 
-  # ---------------------------
-  # COMBINE + PICK BEST PER CHR
-  # ---------------------------
-
-  if (length(results) == 0) {
-    message("No regions detected.")
-    return(NULL)
-  }
-
-  final_df <- bind_rows(results)
-
-  # Pick strongest region per chromosome
-  final_best <- final_df %>%
-    group_by(Chr) %>%
-    slice_max(order_by = Length, n = 1) %>%
-    ungroup()
-
-  # ---------------------------
-  # WRITE OUTPUT
-  # ---------------------------
-
-  out_file <- file.path(paste0(outpath, fname,
-                               "_centromere_best.txt"))
-
-  write.table(final_best,
-              file = out_file,
-              sep = "\t",
-              row.names = FALSE,
-              quote = FALSE)
-
-  return(final_best)
+    df$Chr <- chr
+    df
+  }))
 }
 
 
-# -----------------------------
-# Run for all genomes
-outpath <- "/home/celphin/scratch/Arctic_centromere_lengths/raw_data/"
+select_peaks <- function(values, n = 3, decreasing = FALSE, min_dist = 1e6) {
+
+  ord <- order(values, decreasing = decreasing)
+  selected <- c()
+
+  for (idx in ord) {
+
+    if (length(selected) == 0) {
+      selected <- c(selected, idx)
+    } else {
+
+      if (all(abs(idx - selected) > min_dist)) {
+        selected <- c(selected, idx)
+      }
+    }
+
+    if (length(selected) == n) break
+  }
+
+  selected
+}
+
+############################################################
+# Centromere detection
+############################################################
+
+calculate_centromeres <- function(fname,
+                                  outpath,
+                                  rep_bin,
+                                  shannon_bin) {
+
+  message("====================================")
+  message("Starting genome: ", fname)
+  message("====================================")
+
+  summary_path <- file.path(outpath, "Summary_output", "output_data")
+  file_list <- list.files(summary_path, full.names = TRUE)
+
+  message("Searching files...")
+
+  rep_files <- file_list[
+    grepl("Repeat_abundance_sum", file_list) &
+    grepl(fname, file_list)
+  ]
+
+  sh_files <- file_list[
+    grepl("Shannon_div", file_list) &
+    grepl(fname, file_list)
+  ]
+
+  message("Repeat files found: ", length(rep_files))
+  message("Shannon files found: ", length(sh_files))
+
+  if (length(rep_files) == 0 || length(sh_files) == 0) {
+    warning("Missing files for: ", fname)
+    return(NULL)
+  }
+
+  message("Loading data...")
+
+  Repeat_total  <- read_two_col(rep_files, "Repeat")
+  Shannon_total <- read_two_col(sh_files, "Shannon")
+
+  Repeat_total$Genome_position  <- as.numeric(Repeat_total$Genome_position)
+  Repeat_total$Repeat           <- as.numeric(Repeat_total$Repeat)
+
+  Shannon_total$Genome_position <- as.numeric(Shannon_total$Genome_position)
+  Shannon_total$Shannon         <- as.numeric(Shannon_total$Shannon)
+
+  chromosomes <- intersect(unique(Repeat_total$Chr),
+                           unique(Shannon_total$Chr))
+
+  message("Chromosomes to process: ", length(chromosomes))
+
+  final_ranges <- list()
+
+############################################################
+# Chromosome loop
+############################################################
+
+  for (i in seq_along(chromosomes)) {
+
+    chr <- chromosomes[i]
+
+    message("Processing ", chr,
+            " (", i, "/", length(chromosomes), ")")
+
+	edge_buffer <- 3e6  # 3 Mbp
+
+	rep_chr <- Repeat_total %>%
+	  filter(Chr == chr,
+			 Genome_position > edge_buffer,
+			 Genome_position < max(Genome_position) - edge_buffer) %>%
+	  arrange(Genome_position)
+
+	sh_chr <- Shannon_total %>%
+	  filter(Chr == chr,
+			 Genome_position > edge_buffer,
+			 Genome_position < max(Genome_position) - edge_buffer) %>%
+	  arrange(Genome_position)
+
+	if (nrow(rep_chr) < rep_bin || nrow(sh_chr) < shannon_bin) {
+	  message("Skipping ", chr, " (insufficient data after edge trimming)")
+	  next
+	}
+
+############################################################
+# Rolling means
+############################################################
+
+    rep_chr$roll <- zoo::rollmean(rep_chr$Repeat,
+                                  k = rep_bin,
+                                  fill = NA,
+                                  align = "center")
+
+    sh_chr$roll <- zoo::rollmean(sh_chr$Shannon,
+                                 k = shannon_bin,
+                                 fill = NA,
+                                 align = "center")
+
+    rep_chr <- rep_chr %>% filter(!is.na(roll))
+    sh_chr  <- sh_chr  %>% filter(!is.na(roll))
+
+############################################################
+# Find top 3 min values - Shannon rolling mean
+############################################################
+
+    sh_mean <- mean(sh_chr$roll, trim = 0.1, na.rm = TRUE)
+    sh_sd   <- 0.3*sd(sh_chr$roll, na.rm = TRUE)
+
+    sh_min_idx <- select_peaks(sh_chr$roll, n = 3, decreasing = FALSE)
+
+    sh_min_pos <- sh_chr$Genome_position[sh_min_idx]
+
+############################################################
+# Find top 3 min values - Repeat Abundance rolling mean
+############################################################
+
+    rep_mean <- mean(rep_chr$roll, trim = 0.1, na.rm = TRUE)
+    rep_sd   <- 0.3*sd(rep_chr$roll, na.rm = TRUE)
+
+    rep_min_idx <- select_peaks(rep_chr$roll, n = 3, decreasing = FALSE)
+
+    rep_min_pos <- rep_chr$Genome_position[rep_min_idx]
+
+############################################################
+# Find top 3 max values  - Repeat Abundance rolling mean
+############################################################
+
+    rep_max_idx <- select_peaks(rep_chr$roll, n = 3, decreasing = TRUE)
+
+    rep_max_pos <- rep_chr$Genome_position[rep_max_idx]
+
+############################################################
+# Shannon diversity ranges
+# Find the range of genome positions from each min that stay below the mean 
+# Once a position has the same value as the mean no longer include in the range
+############################################################
+
+	sh_ranges <- lapply(sh_min_idx, function(idx) {
+
+	  left <- idx
+	  right <- idx
+
+	  # Expand left
+	  while (left > 1 && sh_chr$roll[left] < sh_mean - sh_sd) {
+		left <- left - 1
+	  }
+
+	  # Expand right
+	  while (right < nrow(sh_chr) && sh_chr$roll[right] < sh_mean - sh_sd) {
+		right <- right + 1
+	  }
+
+	  start <- sh_chr$Genome_position[left + 1]
+	  end   <- sh_chr$Genome_position[right - 1]
+
+	  data.frame(
+		Species = fname,
+		Chr = chr,
+		Start = start,
+		End = end,
+		Length = end - start,
+		Type = "Shannon",
+		Dist = sh_mean - sh_chr$roll[idx]
+	  )
+	})
+
+
+############################################################
+# Repeat abundance ranges 
+# Find the range of genome positions from each min and max that stay below/above the mean 
+# Once a position has the same value as the mean no longer include in the range
+############################################################
+
+	rep_ranges_min <- lapply(rep_min_idx, function(idx) {
+
+	  left <- idx
+	  right <- idx
+
+	  while (left > 1 && rep_chr$roll[left] < rep_mean - rep_sd) {
+		left <- left - 1
+	  }
+
+	  while (right < nrow(rep_chr) && rep_chr$roll[right] < rep_mean - rep_sd) {
+		right <- right + 1
+	  }
+
+	  start <- rep_chr$Genome_position[left + 1]
+	  end   <- rep_chr$Genome_position[right - 1]
+
+	  data.frame(
+		Species = fname,
+		Chr = chr,
+		Start = start,
+		End = end,
+		Length = end - start,
+		Type = "RepMin",
+		Dist = rep_mean - rep_chr$roll[idx]
+	  )
+	})
+
+
+	rep_ranges_max <- lapply(rep_max_idx, function(idx) {
+
+	  left <- idx
+	  right <- idx
+
+	  while (left > 1 && rep_chr$roll[left] > rep_mean + rep_sd) {
+		left <- left - 1
+	  }
+
+	  while (right < nrow(rep_chr) && rep_chr$roll[right] > rep_mean + rep_sd) {
+		right <- right + 1
+	  }
+
+	  start <- rep_chr$Genome_position[left + 1]
+	  end   <- rep_chr$Genome_position[right - 1]
+
+	  data.frame(
+		Species = fname,
+		Chr = chr,
+		Start = start,
+		End = end,
+		Length = end - start,
+		Type = "RepMax",
+		Dist = rep_chr$roll[idx] - rep_mean
+	  )
+	})
+
+
+############################################################
+# Find the longest range for each chromosome
+# Filter for the type furthest from the mean and then filter by length within that type
+# Record the Spp, Chr, Start, End,  Length, Type: Shannon or RepMin or RepMax
+############################################################
+
+chr_ranges <- do.call(
+  rbind,
+  c(sh_ranges, rep_ranges_min, rep_ranges_max)
+)
+
+# Only proceed if we have candidate regions
+if (nrow(chr_ranges) > 0) {
+
+  # Filter by minimum block size (1 Mbp)
+  min_block_size <- 1e6
+
+  chr_ranges_filtered <- chr_ranges %>%
+    filter(Length >= min_block_size)
+
+  if (nrow(chr_ranges_filtered) > 0) {
+
+    # Select the region with the greatest distance from mean
+    greatest_diff <- chr_ranges_filtered %>%
+      arrange(desc(Dist)) %>%
+      slice(1)
+
+    final_ranges[[length(final_ranges) + 1]] <- greatest_diff
+  }
+}
+}
+
+############################################################
+# Output results
+############################################################
+
+  if (length(final_ranges) > 0) {
+
+    final_ranges <- do.call(rbind, final_ranges)
+
+  } else {
+
+    final_ranges <- data.frame(
+      Species = character(),
+      Chr = character(),
+      Start = numeric(),
+      End = numeric(),
+      Length = numeric(),
+      Type = character()
+    )
+  }
+
+  out_file <- file.path(outpath,
+                        paste0(fname,
+                               "_Centromere_candidates.txt"))
+
+  message("Writing results to: ", out_file)
+  message("Number of candidate regions: ", nrow(final_ranges))
+
+  write.table(final_ranges,
+              file = out_file,
+              row.names = FALSE,
+              col.names = TRUE,
+              sep = "\t")
+
+  message("Finished genome: ", fname)
+
+  return(final_ranges)
+}
+
+############################################################
+# Run all genomes
+############################################################
+
+outpath <- "/home/celphin/scratch/Arctic_centromere_lengths/raw_data"
 
 fnames <- c(
 "Argentinaanserina_H0-AT",
@@ -260,21 +433,10 @@ fnames <- c(
 )
 
 results_all <- lapply(fnames, function(x)
-  calculate_centromeres(x, outpath))
+  calculate_centromeres(x, outpath, rep_bin = 100, shannon_bin = 100))
 
 results_all <- do.call(rbind, results_all)
 
-
-# Combine all species
-final_table <- bind_rows(all_results)
-
-# Save master file
-write.table(final_table,
-            file=paste0(outpath,
-                        "ALL_species_centromere_ranges.txt"),
-            sep="\t",
-            row.names=FALSE,
-            quote=FALSE)
 
 
 ##########################

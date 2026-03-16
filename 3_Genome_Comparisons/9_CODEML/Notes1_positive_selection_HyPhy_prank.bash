@@ -150,7 +150,7 @@ ls *_HyPhy.txt | wc -l
 
 
 ################################
-# Rerun HyPhy with prank alignments
+# Rerun HyPhy with guidance prank alignments
 
 # get file list of non empty files
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
@@ -186,7 +186,7 @@ done > filtered_guidance_tree_list.txt
 
 # check count
 wc -l filtered_guidance_tree_list.txt
-# 4053 
+
 
 ##############################
 # Test ABSREL, RELAX and BUSTED
@@ -222,10 +222,10 @@ hyphy busted \
 cat << 'EOF' > absrel_guidance_array.sh
 #!/bin/bash
 #SBATCH --account=def-henryg
-#SBATCH --time=0-6:00:00
+#SBATCH --time=0-8:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=20
+#SBATCH --mem=64G
 #SBATCH --output=logs/absrel_guidance_%A_%a.out
 #SBATCH --error=logs/absrel_guidance_%A_%a.err
 
@@ -233,7 +233,7 @@ module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 hyphy/2.5.49
 
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
-CHUNK=10
+CHUNK=20
 
 START=$(( (SLURM_ARRAY_TASK_ID - 1) * CHUNK + 1 ))
 END=$(( START + CHUNK - 1 ))
@@ -313,7 +313,7 @@ EOF
 chmod +x absrel_guidance_array.sh
 dos2unix absrel_guidance_array.sh
 
-sbatch --array=1-406%100 absrel_guidance_array.sh
+sbatch --array=1-566%100 absrel_guidance_array.sh
 
 
 #--------------------
