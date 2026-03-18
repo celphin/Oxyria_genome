@@ -171,7 +171,7 @@ calculate_centromeres <- function(fname,
     message("Processing ", chr,
             " (", i, "/", length(chromosomes), ")")
 
-	edge_buffer <- 3e6  # 3 Mbp
+	edge_buffer <- 2e6  # 2 Mbp
 
 	rep_chr <- Repeat_total %>%
 	  filter(Chr == chr,
@@ -212,7 +212,8 @@ calculate_centromeres <- function(fname,
 ############################################################
 
     sh_mean <- mean(sh_chr$roll, trim = 0.1, na.rm = TRUE)
-    sh_sd   <- 0.3*sd(sh_chr$roll, na.rm = TRUE)
+    sh_extreme_min <- min(sh_chr$roll, na.rm = TRUE)
+    sh_thresh <- sh_mean - 0.5 * (sh_mean - sh_extreme_min)
 
     sh_min_idx <- select_peaks(sh_chr$roll, n = 3, decreasing = FALSE)
 
@@ -223,7 +224,8 @@ calculate_centromeres <- function(fname,
 ############################################################
 
     rep_mean <- mean(rep_chr$roll, trim = 0.1, na.rm = TRUE)
-    rep_sd   <- 0.3*sd(rep_chr$roll, na.rm = TRUE)
+    rep_extreme_min <- min(rep_chr$roll, na.rm = TRUE)
+    rep_thresh_min <- rep_mean - 0.5 * (rep_mean - rep_extreme_min)
 
     rep_min_idx <- select_peaks(rep_chr$roll, n = 3, decreasing = FALSE)
 
@@ -232,6 +234,9 @@ calculate_centromeres <- function(fname,
 ############################################################
 # Find top 3 max values  - Repeat Abundance rolling mean
 ############################################################
+
+    rep_extreme_max <- max(rep_chr$roll, na.rm = TRUE)
+    rep_thresh_max <- rep_mean + 0.5 * (rep_extreme_max - rep_mean)
 
     rep_max_idx <- select_peaks(rep_chr$roll, n = 3, decreasing = TRUE)
 
@@ -248,15 +253,12 @@ calculate_centromeres <- function(fname,
 	  left <- idx
 	  right <- idx
 
-	  # Expand left
-	  while (left > 1 && sh_chr$roll[left] < sh_mean - sh_sd) {
-		left <- left - 1
-	  }
-
-	  # Expand right
-	  while (right < nrow(sh_chr) && sh_chr$roll[right] < sh_mean - sh_sd) {
-		right <- right + 1
-	  }
+	while (left > 1 && sh_chr$roll[left] < sh_thresh) {
+	  left <- left - 1
+	}
+	while (right < nrow(sh_chr) && sh_chr$roll[right] < sh_thresh) {
+	  right <- right + 1
+	}
 
 	  start <- sh_chr$Genome_position[left + 1]
 	  end   <- sh_chr$Genome_position[right - 1]
@@ -284,13 +286,8 @@ calculate_centromeres <- function(fname,
 	  left <- idx
 	  right <- idx
 
-	  while (left > 1 && rep_chr$roll[left] < rep_mean - rep_sd) {
-		left <- left - 1
-	  }
-
-	  while (right < nrow(rep_chr) && rep_chr$roll[right] < rep_mean - rep_sd) {
-		right <- right + 1
-	  }
+      while (left > 1 && rep_chr$roll[left] < rep_thresh_min) { left <- left - 1 }
+      while (right < nrow(rep_chr) && rep_chr$roll[right] < rep_thresh_min) { right <- right + 1 }
 
 	  start <- rep_chr$Genome_position[left + 1]
 	  end   <- rep_chr$Genome_position[right - 1]
@@ -312,13 +309,8 @@ calculate_centromeres <- function(fname,
 	  left <- idx
 	  right <- idx
 
-	  while (left > 1 && rep_chr$roll[left] > rep_mean + rep_sd) {
-		left <- left - 1
-	  }
-
-	  while (right < nrow(rep_chr) && rep_chr$roll[right] > rep_mean + rep_sd) {
-		right <- right + 1
-	  }
+      while (left > 1 && rep_chr$roll[left] > rep_thresh_max) { left <- left - 1 }
+      while (right < nrow(rep_chr) && rep_chr$roll[right] > rep_thresh_max) { right <- right + 1 }
 
 	  start <- rep_chr$Genome_position[left + 1]
 	  end   <- rep_chr$Genome_position[right - 1]
@@ -341,30 +333,48 @@ calculate_centromeres <- function(fname,
 # Record the Spp, Chr, Start, End,  Length, Type: Shannon or RepMin or RepMax
 ############################################################
 
-chr_ranges <- do.call(
-  rbind,
-  c(sh_ranges, rep_ranges_min, rep_ranges_max)
-)
+	chr_ranges <- do.call(
+	  rbind,
+	  c(sh_ranges, rep_ranges_min, rep_ranges_max)
+	)
 
-# Only proceed if we have candidate regions
-if (nrow(chr_ranges) > 0) {
+	if (nrow(chr_ranges) > 0) {
 
-  # Filter by minimum block size (1 Mbp)
-  min_block_size <- 1e6
+	  best_type <- chr_ranges %>%
+		group_by(Type) %>%
+		summarise(Dist = max(Dist)) %>%
+		arrange(desc(Dist)) %>%
+		slice(1) %>%
+		pull(Type)
 
-  chr_ranges_filtered <- chr_ranges %>%
-    filter(Length >= min_block_size)
+	type_candidates <- chr_ranges %>%
+	  filter(Type == best_type)
 
-  if (nrow(chr_ranges_filtered) > 0) {
+	# normalize within the chromosome/type
+	if(nrow(type_candidates) > 1){
+	  type_candidates <- type_candidates %>%
+		mutate(
+		  Dist_norm   = (Dist - min(Dist)) / (max(Dist) - min(Dist)),
+		  Length_norm = (Length - min(Length)) / (max(Length) - min(Length)),
+		  Score = 0.7*Dist_norm + 0.3*Length_norm
+		)
+	} else {
+	  type_candidates <- type_candidates %>%
+		mutate(
+		  Dist_norm = 1,
+		  Length_norm = 1,
+		  Score = 1
+		)
+	}
 
-    # Select the region with the greatest distance from mean
-    greatest_diff <- chr_ranges_filtered %>%
-      arrange(desc(Dist)) %>%
-      slice(1)
+	longest <- type_candidates %>%
+	  arrange(desc(Score)) %>%
+	  slice(1)
+	  
+	  final_ranges[[length(final_ranges) + 1]] <- longest
+	}
 
-    final_ranges[[length(final_ranges) + 1]] <- greatest_diff
-  }
-}
+
 }
 
 ############################################################
@@ -438,6 +448,56 @@ results_all <- lapply(fnames, function(x)
 results_all <- do.call(rbind, results_all)
 
 
+#########################
+# Get chromosome lengths
+
+extract_chr_lengths <- function(fname, outpath) {
+
+  summary_path <- file.path(outpath, "Summary_output", "output_data")
+  file_list <- list.files(summary_path, full.names = TRUE)
+
+  rep_files <- file_list[
+    grepl("Repeat_abundance_sum", file_list) &
+    grepl(fname, file_list)
+  ]
+
+  sh_files <- file_list[
+    grepl("Shannon_div", file_list) &
+    grepl(fname, file_list)
+  ]
+
+  if (length(rep_files) == 0 & length(sh_files) == 0) {
+    warning("No files found for: ", fname)
+    return(NULL)
+  }
+
+  # Prefer Shannon but fall back to repeat if needed
+  if (length(sh_files) > 0) {
+    df <- read_two_col(sh_files, "Shannon")
+  } else {
+    df <- read_two_col(rep_files, "Repeat")
+  }
+
+  df$Genome_position <- as.numeric(df$Genome_position)
+
+  chr_lengths <- df %>%
+    dplyr::group_by(Chr) %>%
+    dplyr::summarise(Chr_length = max(Genome_position, na.rm = TRUE)) %>%
+    dplyr::mutate(Genome = fname) %>%
+    dplyr::ungroup()
+
+  return(chr_lengths)
+}
+
+chr_lengths_all <- lapply(fnames, function(x)
+  extract_chr_lengths(x, outpath)
+)
+
+chr_lengths_all <- dplyr::bind_rows(chr_lengths_all)
+
+head(chr_lengths_all)
+
+colnames(chr_lengths_all) <- c("Chr", "ChrLength", "Spp")
 
 ##########################
 # Look at data with plots for all spp
@@ -446,10 +506,10 @@ results_all <- do.call(rbind, results_all)
 # copy *_total_possible_range.txt to one folder
 
 # Narval
-# cd /home/celphin/scratch/Arctic_centromere_lengths/
-# cat *_total_possible_range.txt > Arctic_genomes_total_possible_range.txt
+cd /home/celphin/scratch/Arctic_centromere_lengths/raw_data
+cat *_Centromere_candidates.txt > Arctic_genomes_total_possible_range.txt
 
-# wc -l Arctic_genomes_total_possible_range.txt
+wc -l Arctic_genomes_total_possible_range.txt
 # 2624 Arctic_genomes_total_possible_range.txt
 
 # Copy to local machine
@@ -458,14 +518,273 @@ results_all <- do.call(rbind, results_all)
 #############################
 # read in cent_pred
 
+tmux attach-session -t R
+
 fname="Arctic_genomes"
-outpath="~/Github/Oxyria_genome/3_Genome_Comparisons/6_RepeatOBserver"
+outpath <- "/home/celphin/scratch/Arctic_centromere_lengths/raw_data"
 
 # Wrap in function
 #automated_centromere_detection <- function(fname=fname,  outpath=outpath) {
 
 # read in the data
 df0 <- utils::read.table(paste0(outpath,"/",fname,"_total_possible_range.txt"), sep = "\t", header=TRUE, check.names = FALSE)
+
+df <- df0[-which(df0$Species=="Species"),]
+
+df_sorted <- df
+
+colnames(df_sorted) <-  c("Spp", "Chr","Start", "End","Length",
+"Type","Dist", "Dist_norm", "Length_norm", "Score")
+
+
+unique(df_sorted$Spp)
+
+arctic_spp <- c("Draniv2_H0-AT", "DryOcto_H0-AT", "Dryoct_H0-AT", "Oxydig_H1-AT")   
+alpine_spp <- c("Rhunob_H0-AT")  
+
+df2 <- df_sorted %>%
+  mutate(
+    Habitat = case_when(
+      Spp %in% arctic_spp ~ "Arctic",
+      Spp %in% alpine_spp ~ "Alpine",
+      TRUE ~ "Other"
+    )
+  )
+
+#-----------------------
+# add in plant family
+
+unique(df2$Spp)
+#[1] Arabidopsis_H0-AT     Brassica_H0-AT        COLCEN_H0-AT          Draniv2_H0-AT         DryOcto_H0-AT       
+#[7] Fagoesc_H1-AT         Fagoesc_H2-AT         Fagotat_H1-AT         MN47_H0-AT            Malussylvestris_H0-AT Oxydig_H1-AT
+#[13] Polavi_H0-AT          Prunuspersica_H0-AT   Rhunob_H0-AT          Rhutan_H0-AT          Rubusidaeus_H0-AT     Strawberry_H0-AT
+
+family_lookup <- data.frame(
+  Spp = c("Argentinaanserina_H0-AT",
+    "Brassica_H0-AT",
+    "COLCEN_H0-AT",
+    "Draniv2_H0-AT",
+    "DryOcto_H0-AT",
+    "Fagoesc_H1-AT",
+    "Fagoesc_H2-AT",
+    "Fagotat_H1-AT",
+    "Fagotat_H2-AT",
+    "MN47_H0-AT",
+    "Malussylvestris_H0-AT",
+    "Oxydig_H1-AT",
+    "Polavi_H0-AT",
+    "Prunuspersica_H0-AT",
+    "Rhunob_H0-AT",
+    "Rhutan_H0-AT",
+    "Rubusidaeus_H0-AT",
+    "Strawberry_H0-AT"
+  ),
+  Family = c(
+    "Brassicaceae",
+    "Brassicaceae",
+    "Brassicaceae",
+    "Brassicaceae",
+    "Rosaceae",
+    "Polygonaceae",
+    "Polygonaceae",
+    "Polygonaceae",
+    "Polygonaceae",
+    "Brassicaceae",
+    "Rosaceae",
+    "Polygonaceae",
+    "Polygonaceae",
+    "Rosaceae",
+    "Polygonaceae",
+    "Polygonaceae",
+    "Rosaceae",
+    "Rosaceae"
+  )
+)
+
+df2 <- df2 %>%
+  left_join(family_lookup, by = "Spp")
+
+df2$Family <- as.factor(df2$Family)
+
+
+#################################
+# calculate the average centromere length per species
+
+df2$Length <- as.numeric(df2$Length)
+
+avg_length <- df2 %>%
+  group_by(Spp) %>%
+  summarise(mean_length = mean(Length))
+
+avg_length_habitat <- df2 %>%
+  group_by(Habitat) %>%
+  summarise(mean_length = mean(Length))
+
+df2 <- df2 %>%
+  mutate(
+    HabitatGroup = ifelse(Habitat %in% c("Arctic","Alpine"),
+                          "Arctic/Alpine",
+                          "Other")
+  )
+
+
+write.csv(df2, paste0(outpath,"/",fname,"_final_cent_pred_reptypes_habitat.csv"), row.names = FALSE)
+
+
+#############################
+# add in ChrLengths
+
+df3 <- merge(
+  df2,
+  chr_lengths_all,
+  by = c("Spp", "Chr"),
+  all.x = TRUE
+)
+
+# relative centromere sizes
+
+df3 <- df3 %>%
+  dplyr::mutate(RelLength = Length / ChrLength)
+
+df3$Spp <- with(df3, reorder(Spp, RelLength, FUN = mean))
+
+df2$Spp <- with(df2, reorder(Spp, Length, FUN = mean))
+
+
+df2_filtered <- df2 %>%
+  filter(!Spp %in% c("Fagoesc_H2-AT", "Fagotat_H2-AT"))
+
+df3_filtered <- df3 %>%
+  filter(!Spp %in% c("Fagoesc_H2-AT", "Fagotat_H2-AT"))
+
+
+########################
+# Plot the data
+library(ggplot2)
+
+# Looking at Repeat lengths
+
+p1 <- ggplot(df2_filtered, aes(x = HabitatGroup, y = Length, fill = HabitatGroup)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    x = "Habitat group",
+    y = "Repeat region length",
+    title = "Chromosome repeat lengths: Arctic/Alpine vs Other"
+  ) +
+  theme_classic()
+
+ggsave("habitat_boxplot.png", plot = p1, width = 6, height = 4, dpi = 300)
+
+#----------------------
+# spp patterns
+
+# Order spp by family
+df2 <- df2 %>%
+  mutate(Spp = reorder(Spp, Length, FUN = mean))
+
+p2 <- ggplot(df2_filtered, aes(x = Spp, y = Length, fill = HabitatGroup)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    x = "Species",
+    y = "Repeat region length",
+    fill = "Group",
+    title = "Repeat lengths per species"
+  ) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("species_repeat_lengths.png", plot = p2, width = 8, height = 5, dpi = 300)
+
+#--------------------------------
+# spp centromere sizes split by plant family
+
+p3 <- ggplot(df2_filtered, aes(x = Spp, y = Length, fill = HabitatGroup)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  facet_wrap(~Family, scales = "free_x") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("family_repeat_lengths.png", plot = p3, width = 10, height = 6, dpi = 300)
+
+
+#------------------------------
+
+p4 <- ggplot(df3_filtered, aes(x = HabitatGroup, y = RelLength, fill = HabitatGroup)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(
+    x = "Habitat group",
+    y = "Relative Repeat region length",
+    title = "Chromosome repeat lengths: Arctic/Alpine vs Other"
+  ) +
+  theme_classic()
+
+ggsave("rel_habitat_boxplot.png", plot = p4, width = 6, height = 4, dpi = 300)
+
+
+#------------------------------
+# relative spp centromere sizes split by plant family
+p5 <- ggplot(df3_filtered, aes(x = Spp, y = RelLength, fill = HabitatGroup)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  facet_wrap(~Family, scales = "free_x") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("rel_family_repeat_lengths.png", plot = p5, width = 10, height = 6, dpi = 300)
+
+
+#------------------------------
+# relative spp centromere sizes split by plant family
+p6 <- ggplot(df3_filtered, aes(x = Spp, y = RelLength, fill = HabitatGroup)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  facet_wrap(~HabitatGroup, scales = "free_x") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("rel_Habitat_SPP_repeat_lengths.png", plot = p6, width = 10, height = 6, dpi = 300)
+
+
+##########################
+# Test
+
+table(df3$HabitatGroup)
+
+# Arctic/Alpine         Other
+           # 35           143
+
+
+kruskal.test(RelLength ~ HabitatGroup, data = df3_filtered)
+
+# Kruskal-Wallis rank sum test
+# data:  RelLength by HabitatGroup
+# Kruskal-Wallis chi-squared = 13.55, df = 1, p-value = 0.0002323
+
+#########################
+# Correct for spp groupings
+library(lme4)
+
+# Linear mixed model
+mod <- lmer(RelLength ~ HabitatGroup + (1 | Spp), data = df3_filtered)
+
+# Test significance of HabitatGroup
+library(lmerTest)
+anova(mod)
+
+# Type III Analysis of Variance Table with Satterthwaite's method
+                # Sum Sq   Mean Sq NumDF  DenDF F value Pr(>F)
+# HabitatGroup 0.0016764 0.0016764     1 13.657  2.1858  0.162
+
+
+
+
+
+###################################
+# Old version for raw output
 
 # remove header rows
 df <- df0[-which(df0$Label=="Label"),]
