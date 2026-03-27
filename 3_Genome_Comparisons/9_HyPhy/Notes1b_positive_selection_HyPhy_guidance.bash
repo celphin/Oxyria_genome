@@ -263,11 +263,10 @@ do
         continue
     fi
 
-
     # Remove duplicate sequences
     hyphy remove-duplicates.bf \
         --msa "$msa" \
-        --tree "$tree" \
+        --tree "$clean_tree" \
         --output "$output"
 
     # Run ABSREL
@@ -390,12 +389,12 @@ do
     tree="${f}_tree.txt_HyPhy.txt"
     output="${f}_guidance_unique.nxh"
     final="${f}_guidance_unique.nxh.RELAX.json"
+    clean_tree="${f}_tree.txt_HyPhy_relax.txt"
 
     if [[ -f "$final" ]]; then
         echo "Output exists for $f — skipping"
         continue
     fi
-
 
     # Count number of foreground branches
     FG_COUNT=$(grep -o "Foreground" "$tree" | wc -l)
@@ -403,19 +402,18 @@ do
     if [[ "$FG_COUNT" -ge 2 ]]; then
         echo "Running RELAX (FG=$FG_COUNT)"
 
-clean_tree="${tree%.txt}_cleaned.txt"
 
-sed 's/\./_/g' "$tree" > "$clean_tree"
+		sed -E 's/([,(])([0-9]+):/\1N_\2:/g' "$tree" > "$clean_tree"
 
-    # Remove duplicate sequences
-    hyphy remove-duplicates.bf \
-        --msa "$msa" \
-        --tree "$tree" \
-        --output "$output"
+		# Remove duplicate sequences
+		hyphy remove-duplicates.bf \
+			--msa "$msa" \
+			--tree "$clean_tree" \
+			--output "$output"
 
 		hyphy relax \
 			--alignment "$output" \
-			--branches FOREGROUND
+			--test FOREGROUND
 
 		STATUS=$?
 

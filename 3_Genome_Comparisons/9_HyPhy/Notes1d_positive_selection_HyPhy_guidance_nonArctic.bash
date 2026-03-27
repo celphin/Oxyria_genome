@@ -10,35 +10,17 @@
 
 ###############################
 # Steps
-# Run  absrel
-# Explore results
+# Run RELAX, BUSTED and absrel on guidance aligned data
 
 ######################
 # Narval2
+tmux new-session -s total
 tmux attach-session -t total
 
 # Load modules
 module load  StdEnv/2020  gcc/9.3.0  openmpi/4.0.3 hyphy/2.5.49
 
 ##########################
-# Copy trees from Arctic folder back up to main to rerun with non-Arctic
-
-tmux attach-session -t backup1
-ls *_tree.txt | wc -l
-#14602
-ls *_tree.txt_pal2nal.fasta | wc -l
-# 3993
-
-cp OG*_tree.txt ..
-cp OG*_tree.txt_pal2nal.fasta ..
-
-cd ..
-ls *_tree.txt | wc -l
-ls *_tree.txt_pal2nal.fasta | wc -l
-
-# 23145
-# 23145
-
 
 ############################
 # Check gene  names for closest non-Arctic relatives
@@ -144,8 +126,8 @@ sort -u foreground_genes.txt > foreground_genes_unique.txt
 # Add {Foreground} label to Arctic branches
 
 # Narval1
-tmux new-session -s total
-tmux attach-session -t total
+tmux new-session -s total1
+tmux attach-session -t total1
 
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
 
@@ -193,18 +175,23 @@ grep -L "{Foreground}" *_HyPhy_nonArctic.txt | xargs rm
 ls *_HyPhy_nonArctic.txt | wc -l
 # 18779
 
-##################################
-# loop through orthogroups that include nonArctic spp 
-# run as slurm array
+mv *_HyPhy_nonArctic.txt ./Arctic_trees
+
+################################
+# Rerun HyPhy with guidance prank alignments
 
 # get file list of non empty files
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/
 
-mkdir -p logs
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
-for f in *_tree.txt; do
-    msa="${f}_pal2nal.fasta"
-    tree="${f}_HyPhy_nonArctic.txt"
+mkdir -p logs_nonArctic
+
+for msa in *_guidance_pal2nal.fasta; do
+
+    # get OG prefix
+    og=${msa%_guidance_pal2nal.fasta}
+
+    tree="${og}_tree.txt_HyPhy_nonArctic.txt"
 
     # Require both files
     [[ -f "$msa" && -f "$tree" ]] || continue
@@ -224,39 +211,67 @@ for f in *_tree.txt; do
         END { if (seq_len == 0) exit 1 }
     ' "$msa"
     then
-        echo "$f"
+        echo "$og"
     fi
 
-done > filtered_tree_list_nonArctic.txt
+done > filtered_guidance_tree_list_nonArctic.txt
 
-# check count
-wc -l filtered_tree_list_nonArctic.txt
+wc -l filtered_guidance_tree_list_nonArctic.txt
+# 10250 filtered_guidance_tree_list_nonArctic.txt
 
-# 16401 filtered_tree_list.txt (Arctic)
-# 16176 filtered_tree_list_nonArctic.txt
-
-#----------------------
-# use nano to import text
-cat << EOF > absrel_array_nonArctic.sh
-#!/bin/bash
-#SBATCH --account=def-henryg
-#SBATCH --time=0-12:00:00
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=32G
-#SBATCH --output=logs/absrel_nonArc_%A_%a.out
-#SBATCH --error=logs/absrel_nonArc_%A_%a.err
+##############################
+# Test ABSREL, RELAX and BUSTED
 
 module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 hyphy/2.5.49
 
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/nonArctic_trees
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+msa="OG0000042_guidance_pal2nal.fasta"
+tree="OG0000042_tree.txt_HyPhy_nonArctic.txt"
+output="OG0000042_guidance_unique_nonArctic.nxh"
+
+hyphy remove-duplicates.bf \
+	--msa "$msa" \
+	--tree "$tree" \
+	--output "$output"
+
+hyphy absrel \
+	--alignment "$output" \
+	--branches FOREGROUND
+
+# Must be more than one branch for these tests?
+hyphy relax \
+	--alignment "$output" \
+	--test FOREGROUND
+
+hyphy busted \
+	--alignment "$output"
+	--branches FOREGROUND
+
+#-------------------------
+# use nano to import text
+cat << 'EOF' > absrel_guidance_nonArctic_array.sh
+#!/bin/bash
+#SBATCH --account=def-henryg
+#SBATCH --time=0-10:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=20G
+#SBATCH --output=logs_nonArctic/nonArctic_HyPhy_%A_%a.out
+#SBATCH --error=logs_nonArctic/nonArctic_HyPhy_%A_%a.err
+
+set +e
+
+module load StdEnv/2020 gcc/9.3.0 openmpi/4.0.3 hyphy/2.5.49
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
 CHUNK=20
 
 START=$(( (SLURM_ARRAY_TASK_ID - 1) * CHUNK + 1 ))
 END=$(( START + CHUNK - 1 ))
 
-TOTAL=$(wc -l < filtered_tree_list_nonArctic.txt)
+TOTAL=$(wc -l < filtered_guidance_tree_list_nonArctic.txt)
 
 if [ $END -gt $TOTAL ]; then
     END=$TOTAL
@@ -264,48 +279,95 @@ fi
 
 echo "Processing lines $START to $END"
 
-sed -n "${START},${END}p" filtered_tree_list_nonArctic.txt | while read f
+sed -n "${START},${END}p" filtered_guidance_tree_list_nonArctic.txt | while read f
 do
     echo "Processing $f"
 
-    msa="${f}_pal2nal.fasta"
-    tree="${f}_HyPhy_nonArctic.txt"
-    output="${f}_unique_nonArctic.nxh"
+    msa="${f}_guidance_pal2nal.fasta"
+    tree="${f}_tree.txt_HyPhy_nonArctic.txt"
+    output="${f}_guidance_unique_nonArctic.nxh"
+    final="${f}_guidance_unique_nonArctic.nxh.ABSREL.json"
+    clean_tree="${f}_tree.txt_HyPhy_nonArctic_relax.txt"
 
-    if [[ -f "$output" ]]; then
+    if [[ -f "$final" ]]; then
         echo "Output exists for $f — skipping"
         continue
     fi
 
+    # Remove duplicate sequences
     hyphy remove-duplicates.bf \
         --msa "$msa" \
         --tree "$tree" \
         --output "$output"
 
+    # Run ABSREL
     hyphy absrel \
         --alignment "$output" \
         --branches FOREGROUND
+
+    # Run BUSTED
+    hyphy busted \
+        --alignment "$output" \
+        --branches Leaves
+
+    # Count number of foreground branches
+    FG_COUNT=$(grep -o "Foreground" "$tree" | wc -l)
+
+    if [[ "$FG_COUNT" -ge 2 ]]; then
+        echo "Running RELAX (FG=$FG_COUNT)"
+
+		# RELAX
+		sed -E 's/([,(])([0-9]+):/\1N_\2:/g' "$tree" > "$clean_tree"
+
+		# Remove duplicate sequences
+		hyphy remove-duplicates.bf \
+			--msa "$msa" \
+			--tree "$clean_tree" \
+			--output "$output"
+
+		hyphy relax \
+			--alignment "$output" \
+			--test FOREGROUND
+
+		STATUS=$?
+
+		if [ $STATUS -ne 0 ]; then
+			echo "RELAX failed for $f (exit code $STATUS)" >> relax_failures.log
+			continue
+		fi
+
+    else
+        echo "Skipping RELAX (FG=$FG_COUNT)"
+    fi
+
 
     echo "Finished $f"
 done
 
 EOF
 
-chmod +x absrel_array_nonArctic.sh
-dos2unix absrel_array_nonArctic.sh
+chmod +x absrel_guidance_nonArctic_array.sh
+dos2unix absrel_guidance_nonArctic_array.sh
 
-cp Arctic_trees/remove-duplicates.bf .
+sbatch --array=1-566%100 absrel_guidance_nonArctic_array.sh
 
-sbatch --array=1-809%100 absrel_array_nonArctic.sh
-# Submitted batch job 57490810
 
-###############################
-# Checking results
-cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees
+#--------------------
+# Check
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
-ls *_unique_nonArctic.nxh |wc -l
-# 16176
-ls *_unique_nonArctic.nxh.ABSREL.json | wc -l 
-# 16044
+ls *_guidance_unique_nonArctic.nxh | wc -l
+ls *_guidance_unique_nonArctic.nxh.ABSREL.json  | wc -l
+ls *_guidance_unique_nonArctic.nxh.BUSTED.json  | wc -l
+ls *_guidance_unique_nonArctic.nxh.RELAX.json  | wc -l
 
-##########################
+# 9238
+# 8926
+# 9182
+# 7648
+
+# 10250 filtered_guidance_tree_list_nonArctic.txt
+
+more logs_nonArctic/absrel_guidance_57983652_1.out
+
+#########################################

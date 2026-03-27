@@ -3,6 +3,7 @@
 # Feb 2025
 ############################
 
+# NARVAL1
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Orthogroups
 
 cp Orthogroups.GeneCount.tsv /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology/core_accessory_genes/
@@ -130,57 +131,16 @@ $4 ~ /(snap|maker)-/           {print > "Draba_nivalis_all_genes.bed"}
 
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology/core_accessory_genes/
 
+tmux new-session -s R
+tmux attach-session -t R
+
+
 module load StdEnv/2023 r/4.3.1
 export R_LIBS_USER=/home/celphin/R/x86_64-pc-linux-gnu-library/4.3
 
 R
 
 install.packages(c("dplyr", "ggplot2", "readr", "tidyr"))
-
-#########################
-# One plot per species of core and accessory gene positions
-
-library(ggplot2)
-library(dplyr)
-
-# List of species
-species_list <- unique(df$species)
-
-# Loop over species
-for (sp in species_list) {
-  
-  # Subset data for this species
-  df_sp <- df %>% filter(species == sp)
-  backbone_sp <- backbone %>% filter(species == sp)
-  
-  # Create plot
-  p <- ggplot() +
-    # Backbone lines
-    geom_segment(data = backbone_sp,
-                 aes(x = start, xend = end,
-                     y = y_base, yend = y_base),
-                 colour = "grey40", linewidth = 1) +
-    
-    # Core/accessory genes
-    geom_segment(data = df_sp,
-             aes(x = start, xend = end,
-                 y = y_pos, yend = y_pos,
-                 colour = type),
-             linewidth = 7,       # thicker lines
-             alpha = 1) +         # fully opaque
-     scale_colour_manual(values = c("Core" = "#0B3D91",      # very dark blue
-                               "Accessory" = "#8B0000")) # dark red
-    
-    theme_bw() +
-    labs(x = "Genomic position",
-         y = "Chromosome",
-         colour = "Gene type",
-         title = sp)
-  
-  # Save figure for this species
-  ggsave(filename = paste0(sp, "_genes_plot.png"), plot = p,
-         width = 8, height = 5, dpi = 800)
-}
 
 ##############################
 # Plot raw densities of core and accessory genes
@@ -322,6 +282,53 @@ for (sp in species_list) {
          plot = p,
          width = 10, height = 10, dpi = 800)
 }
+
+#########################
+# One plot per species of core and accessory gene positions
+
+library(ggplot2)
+library(dplyr)
+
+
+# List of species
+species_list <- unique(df$species)
+
+# Loop over species
+for (sp in species_list) {
+  
+  # Subset data for this species
+  df_sp <- df %>% filter(species == sp)
+  backbone_sp <- backbone %>% filter(species == sp)
+  
+  # Create plot
+  p <- ggplot() +
+    # Backbone lines
+    geom_segment(data = backbone_sp,
+                 aes(x = start, xend = end,
+                     y = y_base, yend = y_base),
+                 colour = "grey40", linewidth = 1) +
+    
+    # Core/accessory genes
+    geom_segment(data = df_sp,
+             aes(x = start, xend = end,
+                 y = y_pos, yend = y_pos,
+                 colour = type),
+             linewidth = 7,       # thicker lines
+             alpha = 1) +         # fully opaque
+     scale_colour_manual(values = c("Core" = "#0B3D91",      # very dark blue
+                               "Accessory" = "#8B0000")) # dark red
+    
+    theme_bw() +
+    labs(x = "Genomic position",
+         y = "Chromosome",
+         colour = "Gene type",
+         title = sp)
+  
+  # Save figure for this species
+  ggsave(filename = paste0(sp, "_genes_plot.png"), plot = p,
+         width = 8, height = 5, dpi = 800)
+}
+
 
 
 ########################

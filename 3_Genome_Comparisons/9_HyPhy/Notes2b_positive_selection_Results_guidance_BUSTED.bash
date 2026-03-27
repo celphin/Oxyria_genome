@@ -18,21 +18,21 @@ ls *_guidance_unique.nxh.RELAX.json  | wc -l
 # 10493
 # 9869
 # 10481
-# 1
+# 8613
 
 
 more logs/absrel_guidance_57878989_1.out
 
-
-
 ##########################
 # Explore results
+
+# Narval1
+tmux attach-session -t total
 
 for f in *_guidance_unique.nxh.ABSREL.json; do
   jq -r --arg file "$f" \
     '$file + "\t" + (.["test results"]["positive test results"]|tostring) + "\t" + (.["test results"].tested|tostring)' "$f"
 done >> Total_ABSREL_guidance_results.txt
-
 
 # filter for only those with positive selection
 awk '$2 != 0' Total_ABSREL_guidance_results.txt | sort -k2,2nr > ABSREL_guidance_nonzero_sorted.txt
