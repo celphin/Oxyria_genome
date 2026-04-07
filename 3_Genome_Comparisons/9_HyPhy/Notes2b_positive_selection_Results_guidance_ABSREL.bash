@@ -34,10 +34,14 @@ for f in *_guidance_unique.nxh.ABSREL.json; do
     '$file + "\t" + (.["test results"]["positive test results"]|tostring) + "\t" + (.["test results"].tested|tostring)' "$f"
 done >> Total_ABSREL_guidance_results.txt
 
+wc -l Total_ABSREL_guidance_results.txt
+# 9832
+
 # filter for only those with positive selection
 awk '$2 != 0' Total_ABSREL_guidance_results.txt | sort -k2,2nr > ABSREL_guidance_nonzero_sorted.txt
 
 wc -l ABSREL_guidance_nonzero_sorted.txt
+# 6876 ABSREL_guidance_nonzero_sorted.txt
 
 # get gene names
 while read file _; do

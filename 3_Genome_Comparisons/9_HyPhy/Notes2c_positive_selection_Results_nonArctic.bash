@@ -37,22 +37,23 @@ wc -l Total_ABSREL_results_guidance_nonArctic.txt
 # 8849 Total_ABSREL_results_guidance_nonArctic.txt
 
 #-------------------------------
+# WRONG column 2 is a count of positive tests
 # For Arctic ABSREL results
 awk '$2 < 0.05 {print $1}' Total_ABSREL_guidance_results.txt | sort | uniq > Arctic_sig_OGs.txt
 awk '$2 < 0.05 {print $1}' Total_ABSREL_results_guidance_nonArctic.txt | sort | uniq > nonArctic_sig_OGs.txt
 
 more Arctic_sig_OGs.txt
-OG0000911_guidance_unique.nxh.ABSREL.json
-OG0000944_guidance_unique.nxh.ABSREL.json
-OG0000949_guidance_unique.nxh.ABSREL.json
-OG0000953_guidance_unique.nxh.ABSREL.json
+# OG0000911_guidance_unique.nxh.ABSREL.json
+# OG0000944_guidance_unique.nxh.ABSREL.json
+# OG0000949_guidance_unique.nxh.ABSREL.json
+# OG0000953_guidance_unique.nxh.ABSREL.json
 
 more nonArctic_sig_OGs.txt
-OG0000042_guidance_unique_nonArctic.nxh.ABSREL.json
-OG0000395_guidance_unique_nonArctic.nxh.ABSREL.json
-OG0000398_guidance_unique_nonArctic.nxh.ABSREL.json
-OG0000405_guidance_unique_nonArctic.nxh.ABSREL.json
-OG0000471_guidance_unique_nonArctic.nxh.ABSREL.json
+# OG0000042_guidance_unique_nonArctic.nxh.ABSREL.json
+# OG0000395_guidance_unique_nonArctic.nxh.ABSREL.json
+# OG0000398_guidance_unique_nonArctic.nxh.ABSREL.json
+# OG0000405_guidance_unique_nonArctic.nxh.ABSREL.json
+# OG0000471_guidance_unique_nonArctic.nxh.ABSREL.json
 
 # reformat
 cut -d'_' -f1 Arctic_sig_OGs.txt | sort | uniq > Arctic_sig_IDs.txt
