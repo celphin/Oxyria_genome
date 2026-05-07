@@ -87,8 +87,8 @@ grep -Fxv -f nonArctic_sig_IDs.txt OG_4species_IDs.txt > 4species_not_in_nonArct
 wc -l 4species_not_in_nonArctic.txt
 wc -l nonArctic_4species_shared.txt
 
-# 194 4species_not_in_nonArctic.txt
-# 20 nonArctic_4species_shared.txt
+# 194 4species_not_in_nonArctic.txt # 194 of the 214 are found in at least one of the other 4 spp
+# 20 nonArctic_4species_shared.txt  # 20 are unique to only the Arctic spp and in all 4 Arctic
 
 wc -l nonArctic_sig_IDs.txt
 wc -l OG_4species_IDs.txt

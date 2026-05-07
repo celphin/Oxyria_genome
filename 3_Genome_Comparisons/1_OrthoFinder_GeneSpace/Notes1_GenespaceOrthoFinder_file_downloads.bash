@@ -9,6 +9,12 @@
 ################################
 # Installation already done
 
+# Copying data to Nird for Cesar
+tmux new-session -s data
+tmux attach-session -t data
+
+rsync -avh ./Total_genomes/* celphin@login.nird.sigma2.no:/nird/datalake/NS9370K/Cesar_OrthoFinder/
+
 ################################
 # Collecting and renameing annotation files
 # Need both the fasta files and the gff3 files
