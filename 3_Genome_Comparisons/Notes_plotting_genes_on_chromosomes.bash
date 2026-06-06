@@ -4,6 +4,64 @@
 # Jan 2025
 ##############################
 
+# Fir
+cd ~/scratch/
+mkdir Arctic_comparative_genomes
+
+cd /home/celphin/scratch/Arctic_comparative_genomes
+
+DEST="/home/celphin/scratch/Arctic_comparative_genomes"
+mkdir -p -- "$DEST"
+
+files=(
+"/home/celphin/scratch/Oxyria/GeneSpace/Total_genomes/genomes/Dryas_octopetala/Dryas_octopetala.gff3"
+"/home/celphin/scratch/Oxyria/EDTA/DryOcto_chr_sizes.txt"
+"/home/celphin/scratch/Oxyria/EDTA/DoctH0_Main.fasta.mod.EDTA.TEanno.gff3"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/7.wgd.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/7.tandem.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/7.proximal.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/7.transposed.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/7.dispersed.pairs"
+
+"/home/celphin/scratch/Oxyria/GeneSpace/Total_genomes/genomes/Oxyria_digyna_H1/Oxyria_digyna_H1.gff3"
+"/home/celphin/scratch/Oxyria/EDTA/Oxyria_digyna_chr_sizes.txt"
+"/home/celphin/scratch/Oxyria/EDTA/Oxyria_digyna.fasta.mod.EDTA.TEanno.gff3"
+"/home/celphin/scratch/Oxyria/EDTA/Oxyria_Main.fasta.mod.EDTA.intact.gff3"
+
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/12.wgd.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/12.tandem.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/12.proximal.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/12.transposed.pairs"
+"/home/celphin/scratch/Oxyria/DupGen_finder/output/12.dispersed.pairs"
+
+"/home/celphin/scratch/Oxyria/DupGen_finder/data/SequenceIDs.txt"
+
+"/home/celphin/scratch/Oxyria/synteny_quantity/Total_interproscan_output_edited3.tsv"
+)
+
+for f in "${files[@]}"; do
+  if [ -e "$f" ]; then
+    cp -a -- "$f" "$DEST/" || { echo "Failed to copy $f" >&2; }
+  else
+    echo "Missing: $f" >&2
+  fi
+done
+
+# Move to Narval
+###################################
+# Also copy over positive selection data, centromere locations, microsynteny data
+
+
+
+
+
+
+
+
+
+############################
+# plotting
+
 # Narval2
 tmux new-session -s gene_plots
 tmux attach-session -t gene_plots
