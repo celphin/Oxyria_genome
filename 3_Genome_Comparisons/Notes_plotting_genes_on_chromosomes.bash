@@ -47,12 +47,22 @@ for f in "${files[@]}"; do
   fi
 done
 
-# Move to Narval
+# Move to Narval via globus
+
 ###################################
 # Also copy over positive selection data, centromere locations, microsynteny data
 
+cd /home/celphin/scratch/Arctic_comparative_genomes/
+
+# Positive selection data
 
 
+
+# Microsynteny
+
+
+
+# Centromere locations
 
 
 
