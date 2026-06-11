@@ -65,7 +65,7 @@ cd /home/celphin/scratch/Arctic_comparative_genomes/
 # Centromere locations
 
 
-
+# Core and accessory
 
 
 
