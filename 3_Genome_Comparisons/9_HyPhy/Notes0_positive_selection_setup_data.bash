@@ -611,7 +611,8 @@ chmod +x generateMAFFTAlignment.sh
 
 ###############################
 # Guidance and PRANK
-# PRANK more phylogenetically correct but more variable too - needs bootstrapping in guidance
+# PRANK more phylogenetically correct but more variable too 
+# - needs bootstrapping in guidance
 
 # https://gensoft.pasteur.fr/docs/prank/170427/
 # https://ariloytynoja.github.io/prank-msa/
@@ -1698,3 +1699,14 @@ ls *_guidance_pal2nal.fasta | wc -l
 # 11314 guidance_list.txt
 
 ###################################
+
+# Try getting IQTREE2 for better gene trees?
+
+
+iqtree2 -s aligned_cds.fasta \
+  -spp codon \
+  -p split \
+  -m GTR+G \
+  -B 1000 \
+  -alrt 1000 \
+  --prefix cds_codon_tree

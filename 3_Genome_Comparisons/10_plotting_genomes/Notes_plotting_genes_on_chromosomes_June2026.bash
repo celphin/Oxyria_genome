@@ -208,143 +208,62 @@ library(tidyverse)
 
 # import a text file with gene positions
 # Dryas
-Dry_genes0 <- read.table("/lustre04/scratch/celphin/Oxyria/GeneSpace/Total_genomes/genomes/Dryas_octopetala/Dryas_octopetala.gff3",sep="\t",header=F)
-Dry_chr_sizes0 <- read.table("/lustre04/scratch/celphin/Oxyria/EDTA/DryOcto_chr_sizes.txt",sep="\t",header=F)
-Dry_TE_repeats0 <- read.table("/lustre04/scratch/celphin/Oxyria/EDTA/DoctH0_Main.fasta.mod.EDTA.TEanno.gff3",sep="\t",header=F)
-Dry_wgd0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/7.wgd.pairs",sep="\t",header=T)
-Dry_tandem0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/7.tandem.pairs",sep="\t",header=T)
-Dry_proximal0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/7.proximal.pairs",sep="\t",header=T)
-Dry_transposed0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/7.transposed.pairs",sep="\t",header=T)
-Dry_dispersed0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/7.dispersed.pairs",sep="\t",header=T)
+Dry_genes0 <- read.table("Dryas_octopetala.gff3",sep="\t",header=F)
+Dry_chr_sizes0 <- read.table("DryOcto_chr_sizes.txt",sep="\t",header=F)
+Dry_TE_repeats0 <- read.table("./Repeats/DoctH0_Main.fasta.mod.EDTA.TEanno.gff3",sep="\t",header=F)
 
 # Oxyria
-Oxy_genes0 <- read.table("/lustre04/scratch/celphin/Oxyria/GeneSpace/Total_genomes/genomes/Oxyria_digyna_H1/Oxyria_digyna_H1.gff3",sep="\t",header=F)
-Oxy_chr_sizes0 <- read.table("/lustre04/scratch/celphin/Oxyria/EDTA/Oxyria_digyna_chr_sizes.txt",sep="\t",header=F)
-Oxy_TE_repeats1 <- read.table("/lustre04/scratch/celphin/Oxyria/EDTA/Oxyria_digyna.fasta.mod.EDTA.TEanno.gff3",sep="\t",header=F)
-Oxy_TE_repeats0 <- read.table("/lustre04/scratch/celphin/Oxyria/EDTA/Oxyria_Main.fasta.mod.EDTA.intact.gff3",sep="\t",header=F)
+Oxy_genes0 <- read.table("Oxyria_digyna_H1.gff3",sep="\t",header=F)
+Oxy_chr_sizes0 <- read.table("Oxyria_digyna_chr_sizes.txt",sep="\t",header=F)
+Oxy_TE_repeats1 <- read.table("./Repeats/Oxyria_digyna.fasta.mod.EDTA.TEanno.gff3",sep="\t",header=F)
+Oxy_TE_repeats0 <- read.table("./Repeats/Oxyria_Main.fasta.mod.EDTA.intact.gff3",sep="\t",header=F)
 
-Oxy_wgd0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/12.wgd.pairs",sep="\t",header=T)
-Oxy_tandem0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/12.tandem.pairs",sep="\t",header=T)
-Oxy_proximal0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/12.proximal.pairs",sep="\t",header=T)
-Oxy_transposed0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/12.transposed.pairs",sep="\t",header=T)
-Oxy_dispersed0 <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/output/12.dispersed.pairs",sep="\t",header=T)
+# Gene duplications
+Dry_wgd0 <- read.table("./Gene_duplications/7.wgd.pairs",sep="\t",header=T)
+Dry_tandem0 <- read.table("./Gene_duplications/7.tandem.pairs",sep="\t",header=T)
+Dry_proximal0 <- read.table("./Gene_duplications/7.proximal.pairs",sep="\t",header=T)
+Dry_transposed0 <- read.table("./Gene_duplications/7.transposed.pairs",sep="\t",header=T)
+Dry_dispersed0 <- read.table("./Gene_duplications/7.dispersed.pairs",sep="\t",header=T)
+
+Oxy_wgd0 <- read.table("./Gene_duplications/12.wgd.pairs",sep="\t",header=T)
+Oxy_tandem0 <- read.table("./Gene_duplications/12.tandem.pairs",sep="\t",header=T)
+Oxy_proximal0 <- read.table("./Gene_duplications/12.proximal.pairs",sep="\t",header=T)
+Oxy_transposed0 <- read.table("./Gene_duplications/12.transposed.pairs",sep="\t",header=T)
+Oxy_dispersed0 <- read.table("./Gene_duplications/12.dispersed.pairs",sep="\t",header=T)
 
 # DupGen seq IDs
-SequenceIDs <- read.table("/lustre04/scratch/celphin/Oxyria/DupGen_finder/data/SequenceIDs.txt",sep=":",header=F)
+SequenceIDs <- read.table("./Gene_duplications/SequenceIDs.txt",sep=":",header=F)
 
 # Interproscan data for all species
-Gene_ont_file <- "/lustre04/scratch/celphin/Oxyria/synteny_quantity/Total_interproscan_output_edited3.tsv"
-gene_ont <- read.delim(Gene_ont_file, header = TRUE, sep = "\t", na.strings = "-", colClasses = c("character", "character", "character", "character"))
+gene_ont <- read.delim("Total_interproscan_output_edited3.tsv", header = TRUE, sep = "\t", na.strings = "-", colClasses = c("character", "character", "character", "character"))
 
-# DMR gene lists
-Dryas_gene_ont <- read.delim("/lustre04/scratch/celphin/Dryas/GO_enrichment/interproscan_dryas_full3.tsv", header = TRUE, sep = "\t", na.strings = "-")
-DMR_DEG <- read.delim("/lustre04/scratch/celphin/Dryas/GO_enrichment/genes_RNA_MethylkitDMR_merged_data.tsv", header = TRUE, sep = "\t")
+# Positive selection data
+pos_sel <- read.table("./Positive_Selection/all_significant_genes_guidance_filtered.tsv",sep="\t",header=T)
+pos_sel_4spp <- read.table("./Positive_Selection/genes_in_4species_filtered_p.txt",sep="\t",header=T)
 
-#----------------------
-# DMRs per site
+# Microsynteny
+microsyn <- read.table("Microsynteny.csv",sep=",",header=T)
 
-# "ALAS_W_C"
-DMR_Alaska_W_C <- DMR_DEG[which(DMR_DEG$site=="ALAS_W_C" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-Alaska_W_C <- as.data.frame(cbind(DMR_Alaska_W_C$Gene, DMR_Alaska_W_C$qvalue))
-Alaska_W_C <- distinct(Alaska_W_C)
-write.table(Alaska_W_C, "Alaska_W_C_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#142
+# Centromere locations
+Dryas_cent_pos <- read.table("./Centromeres/DryOcto_H0-AT_total_possible_range.txt",sep="\t",header=T)
+Oxyria_cent_pos <- read.table("./Centromeres/Oxydig_H1-AT_total_possible_range.txt",sep="\t",header=T)
 
-# "LAT_W_C"
-DMR_Sweden_W_C <- DMR_DEG[which(DMR_DEG$site=="LAT_W_C" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-Sweden_W_C <- as.data.frame(cbind(DMR_Sweden_W_C$Gene, DMR_Sweden_W_C$qvalue))
-Sweden_W_C <- distinct(Sweden_W_C)
-write.table(Sweden_W_C, "Sweden_W_C_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-# 808
+# Core and accessory
+Dryas_core <- read.table("./Core_accessory/core_by_species/Dryas_octopetala_core.bed",sep="\t",header=T)
+Oxyria_core <- read.table("./Core_accessory/core_by_species/Oxyria_digyna_H1_core.bed",sep="\t",header=T)
 
-# "CASS_W_C"
-DMR_Nunavut_W_C <- DMR_DEG[which(DMR_DEG$site=="CASS_W_C" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-Nunavut_W_C <- as.data.frame(cbind(DMR_Nunavut_W_C$Gene, DMR_Nunavut_W_C$qvalue))
-Nunavut_W_C <- distinct(Nunavut_W_C)
-write.table(Nunavut_W_C, "Nunavut_W_C_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#78
+Dryas_accessory <- read.table("./Core_accessory/accessory_by_species/Dryas_octopetala_accessory.bed",sep="\t",header=T)
+Oxyria_accessory <- read.table("./Core_accessory/accessory_by_species/Oxyria_digyna_H1_accessory.bed",sep="\t",header=T)
 
-# "SVAL_W_C"
-DMR_Svalbard_W_C <- DMR_DEG[which(DMR_DEG$site=="SVAL_W_C" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-Svalbard_W_C <- as.data.frame(cbind(DMR_Svalbard_W_C$Gene, DMR_Svalbard_W_C$qvalue))
-Svalbard_W_C <- distinct(Svalbard_W_C)
-write.table(Svalbard_W_C, "Svalbard_W_C_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#103
-
-# "Pheno"
-DMR_Mat_Sen <- DMR_DEG[which(DMR_DEG$site=="Pheno" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-Mat_Sen <- as.data.frame(cbind(DMR_Mat_Sen$Gene, DMR_Mat_Sen$qvalue))
-Mat_Sen <- distinct(Mat_Sen)
-write.table(Mat_Sen, "Mat_Sen_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-# 8584
-
-# "HL"
-DMR_Wild_Lat_L_H <- DMR_DEG[which(DMR_DEG$site=="HL" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-Wild_Lat_L_H <- as.data.frame(cbind(DMR_Wild_Lat_L_H$Gene, DMR_Wild_Lat_L_H$qvalue))
-Wild_Lat_L_H <- distinct(Wild_Lat_L_H)
-write.table(Wild_Lat_L_H, "Wild_Lat_L_H_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#7621
-
-# "SE_W_C"
-DMR_SE_W_C <- DMR_DEG[which(DMR_DEG$site=="SE_W_C" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-SE_W_C <- as.data.frame(cbind(DMR_SE_W_C$Gene, DMR_SE_W_C$qvalue))
-SE_W_C <- distinct(SE_W_C)
-write.table(SE_W_C, "SE_W_C_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#1434
-
-# "SE_HL"
-DMR_SE_L_H <- DMR_DEG[which(DMR_DEG$site=="SE_HL" & DMR_DEG$perdiff== 10 & DMR_DEG$random=="non-rand" & DMR_DEG$context=="CpG"),]
-SE_L_H <- as.data.frame(cbind(DMR_SE_L_H$Gene, DMR_SE_L_H$qvalue))
-SE_L_H <- distinct(SE_L_H)
-write.table(SE_L_H, "SE_L_H_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-# 388
-
-#-------------------
-# Extract RNA info separately
-
-# "LAT_W_C"
-LAT_RNA <- DMR_DEG[which(DMR_DEG$RNAsite=="LAT_W_C"),]
-LAT_RNA_gene <- as.data.frame(cbind(LAT_RNA$Gene, LAT_RNA$PValue))
-LAT_RNA_gene <- distinct(LAT_RNA_gene)
-write.table(LAT_RNA_gene, "Sweden_RNA_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#59
-
-# "ALAS_W_C"
-ALAS_RNA <- DMR_DEG[which(DMR_DEG$RNAsite=="ALAS_W_C"),]
-ALAS_RNA_gene <- as.data.frame(cbind(ALAS_RNA$Gene, ALAS_RNA$PValue))
-ALAS_RNA_gene <- distinct(ALAS_RNA_gene)
-write.table(ALAS_RNA_gene , "Alaska_RNA_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#19
-
-# "ALEX_W_C"
-ALEX_RNA <- DMR_DEG[which(DMR_DEG$RNAsite=="ALEX_W_C"),]
-ALEX_RNA_gene <- as.data.frame(cbind(ALEX_RNA$Gene, ALEX_RNA$PValue))
-ALEX_RNA_gene <- distinct(ALEX_RNA_gene)
-write.table(ALEX_RNA_gene , "Nunavut_RNA_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#21
-
-# "NORW_W_C"
-NORW_RNA <- DMR_DEG[which(DMR_DEG$RNAsite=="NORW_W_C"),]
-NORW_RNA_gene <- as.data.frame(cbind(NORW_RNA$Gene, NORW_RNA$PValue))
-NORW_RNA_gene <- distinct(NORW_RNA_gene)
-write.table(NORW_RNA_gene , "Norway_RNA_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#6
-
-# "SE_W_C"
-SE_RNA <- DMR_DEG[which(DMR_DEG$RNAsite=="SE_W_C"),]
-SE_RNA_gene <- as.data.frame(cbind(SE_RNA$Gene, SE_RNA$PValue))
-SE_RNA_gene <- distinct(SE_RNA_gene)
-write.table(SE_RNA_gene , "Seedling_RNA_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
-#45
-
-
+Dryas_singleton <- read.table("./Core_accessory/singleton_by_species/Dryas_octopetala_singleton.bed",sep="\t",header=T)
+Oxyria_singleton <- read.table("./Core_accessory/singleton_by_species/Oxyria_digyna_H1_singleton.bed",sep="\t",header=T)
 
 #############################
+# Assign species to run plots for
 
 Spp_genes0 <- Oxy_genes0
 Spp_TE_repeats0 <- Oxy_TE_repeats0
 Spp="Oxyria_digyna"
-
 
 Spp_genes0 <- Dry_genes0
 Spp_TE_repeats0 <- Dry_TE_repeats0
