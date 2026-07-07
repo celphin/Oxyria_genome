@@ -1699,14 +1699,103 @@ ls *_guidance_pal2nal.fasta | wc -l
 # 11314 guidance_list.txt
 
 ###################################
+# files
 
+# OG0000133_guidance_pal2nal.fasta
+# OG0000133_guidance_unique.nxh 
+# OG0000133_guidance_unique.nxh.ABSREL.json 
+# OG0000133_guidance_unique.nxh.BUSTED.json  
+# OG0000133_guidance_unique.nxh.RELAX.json      
+# OG0000133_MSA.guidanceFiltered.fasta 
+# OG0000133_tree.txt                    
+# OG0000133_tree.txt_HyPhy_nonArctic.txt     
+# OG0000133_tree.txt_HyPhy_relax.txt    
+# OG0000133_tree.txt_HyPhy.txt          
+# OG0000133_tree.txt_pal2nal      
+# OG0000133_tree.txt_pal2nal.fasta                
+# OG0000133_tree.txt_Proteins_alignment.fasta    
+# OG0000133_tree.txt_Proteins.fasta             
+# OG0000133_tree.txt_Transcripts.fasta     
+# OG0000133_tree.txt_Transcripts.filtered.fasta   
+# OG0000133_tree.txt_unique.nxh              
+# OG0000133_tree.txt_unique.nxh.ABSREL.json        
+
+
+
+#################################
 # Try getting IQTREE2 for better gene trees?
 
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
 
-iqtree2 -s aligned_cds.fasta \
-  -spp codon \
-  -p split \
-  -m GTR+G \
+module load StdEnv/2023 gcc/12.3 iq-tree/2.3.6  
+
+iqtree2 -s OG0000133_tree.txt_pal2nal.fasta \
+  -nt 4 \
+  -st CODON \
   -B 1000 \
   -alrt 1000 \
-  --prefix cds_codon_tree
+  --prefix OG0000133_cds_codon_tree.txt
+
+
+more OG0000133_cds_codon_tree.txt.treefile
+
+
+#---------------------------
+# Run for all orthogroups
+
+CHUNK=25
+TOTAL=$(wc -l < og_list.txt)
+ARRAY_MAX=$(( (TOTAL + CHUNK - 1) / CHUNK ))
+
+cat << 'EOF' > run_iqtree_chunks.sbatch
+#!/bin/bash
+#SBATCH --job-name=iqtree_chunk
+#SBATCH --array=1-ARRAY_MAX%100
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=8G
+#SBATCH --time=50:00:00
+#SBATCH --output=iqtree_chunk_%A_%a.out
+#SBATCH --error=iqtree_chunk_%A_%a.err
+#SBATCH --account=def-henryg
+
+module load StdEnv/2023 gcc/12.3 iq-tree/2.3.6
+
+CHUNK=25
+START=$(( (SLURM_ARRAY_TASK_ID-1)*CHUNK + 1 ))
+END=$(( SLURM_ARRAY_TASK_ID*CHUNK ))
+TOTAL=$(wc -l < og_list.txt)
+if [ "$END" -gt "$TOTAL" ]; then END=$TOTAL; fi
+
+for i in $(seq $START $END); do
+  OG=$(sed -n "${i}p" og_list.txt)
+
+  iqtree2 -s "${OG}_tree.txt_pal2nal.fasta" \
+    -nt 8 \
+    -st CODON \
+    -B 1000 \
+    -alrt 1000 \
+    --prefix "${OG}_cds_codon_tree"
+
+  for f in "${OG}_cds_codon_tree."*; do
+    [ -e "$f" ] || continue
+    case "$f" in
+      "${OG}_cds_codon_tree.treefile") ;;
+      *) rm -f "$f" ;;
+    esac
+  done
+done
+
+EOF
+
+# replace ARRAY_MAX placeholder
+sed -i "s/ARRAY_MAX/${ARRAY_MAX}/" run_iqtree_chunks.sbatch
+
+sbatch run_iqtree_chunks.sbatch
+
+
+ sq
+          # JOBID     USER      ACCOUNT           NAME  ST  TIME_LEFT NODES CPUS TRES_PER_N MIN_MEM NODELIST (REASON)
+# 64850465_[1-767  celphin def-henryg_c   iqtree_chunk  PD 2-02:00:00     1    8        N/A      8G  (Priority)
+
+quota
+# /scratch (user celphin)  10TB/  20TB    648K/1000K

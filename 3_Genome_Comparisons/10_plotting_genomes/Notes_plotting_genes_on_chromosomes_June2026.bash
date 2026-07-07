@@ -62,7 +62,7 @@ cd /home/celphin/scratch/Arctic_comparative_genomes/
 ############################
 # plotting
 
-# Narval1
+# Narval3
 tmux new-session -s gene_plots
 tmux attach-session -t gene_plots
 
