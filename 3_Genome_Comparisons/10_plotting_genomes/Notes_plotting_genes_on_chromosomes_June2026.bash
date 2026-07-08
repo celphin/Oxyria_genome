@@ -1058,6 +1058,8 @@ all_tracks_raw <- bind_rows(
   dup_total_tracks
 )
 
+# uses Oxyrt-1-86582034
+
 
 # ---- repeats filter subset (edit these) ----
 unique(Spp_TE_repeats0$V3)
@@ -1152,6 +1154,9 @@ rep_tracks <- bind_rows(
                             repeat_types_keep = repeat_types_keep,
                             normalize_bins_to_0_1 = FALSE)
 )
+
+# uses Oxy-1-8814624
+
 
 #-----------------------------
 # 2) Positive selection tracks -> common schema
@@ -1356,6 +1361,15 @@ all_tracks_extended_raw <- bind_rows(
 all_tracks_extended <- renorm_per_track_chr01(all_tracks_extended_raw) %>%
   rename(norm01 = norm01)
 
+ unique(all_tracks_extended_raw$chr)
+ # [1] "DoctH0-1"         "DoctH0-2"         "DoctH0-3"         "DoctH0-4"
+ # [5] "DoctH0-5"         "DoctH0-6"         "DoctH0-7"         "DoctH0-8"
+ # [9] "DoctH0-9"         "Oxyrt-1-86582034" "Oxyrt-2-79714091" "Oxyrt-3-79472951"
+# [13] "Oxyrt-4-78410798" "Oxyrt-5-76064323" "Oxyrt-6-73303751" "Oxyrt-7-72361354"
+# [17] "Oxy-1-8814624"    "Oxy-2-8078772"    "Oxy-3-7717500"    "Oxy-4-7603626"
+# [21] "Oxy-5-7384279"    "Oxy-6-7328924"    "Oxy-7-7013624"
+
+
 #-----------------------------
 # 6) Separate plot per species
 #-----------------------------
@@ -1363,7 +1377,7 @@ plot_species_tracks <- function(dat, species_name, out_png, out_pdf) {
   dat <- dat %>% filter(species == species_name)
 
   p <- ggplot(dat, aes(x = bin_start / 1e6, y = norm01,
-                        color = track, linetype = track)) +
+                        color = track)) +
     geom_line(linewidth = 0.6, alpha = 0.95) +
     facet_wrap(~ chr, ncol = 1, scales = "fixed") +
     labs(x = "Genomic position (Mb, 1 Mb bins)",
@@ -1389,16 +1403,89 @@ plot_species_tracks(
 )
 
 
+#-----------------------------
+# Need to join Oxyria chromosome names and subset to reasonable number of factors
+
+unique(all_tracks_extended$track)
+ # [1] "Gene density"                      "WGD"
+ # [3] "Tandem"                            "Proximal"
+ # [5] "Transposed"                        "Dispersed"
+ # [7] "Total duplications"                "Repeat: CACTA_TIR_transposon"
+ # [9] "Repeat: Copia_LTR_retrotransposon" "Repeat: Gypsy_LTR_retrotransposon"
+# [11] "Repeat: hAT_TIR_transposon"        "Positively selected genes"
+# [13] "Core genes"                        "Accessory genes"
+# [15] "Singleton genes"                   "Microsynteny (Gene.1)"
 
 
+# Keep only the tracks you want to show
+tracks_keep <- c(
+  "Total duplications",
+  "Positively selected genes",
+  "Core genes","Accessory genes",
+  "Microsynteny (Gene.1)",
+  "Repeat: Copia_LTR_retrotransposon"
+)
+
+all_tracks_subset <- all_tracks_extended %>%
+  filter(track %in% tracks_keep)
+
+# then plot as before
+plot_species_tracks(
+  all_tracks_subset, "Dryas_octopetala_H0",
+  "./plots/Dryas_subset_tracks_norm01.png",
+  "./plots/Dryas_subset_tracks_norm01.pdf"
+)
+
+plot_species_tracks(
+  all_tracks_subset, "Oxyria_digyna",
+  "./plots/Oxyria_subset_tracks_norm01.png",
+  "./plots/Oxyria_subset_tracks_norm01.pdf"
+)
+
+#####################################
+# Look at 2 and 4 Mbp windows
+
+rebin_norm01 <- function(df, window_bp) {
+  df %>%
+    mutate(bin_start = floor(bin_start / window_bp) * window_bp) %>%
+    group_by(chr, dataset, track, species, bin_start) %>%
+    summarise(
+      norm01 = max(norm01, na.rm = TRUE),   # or mean(norm01, na.rm=TRUE)
+      .groups = "drop"
+    )
+}
+
+all_tracks_2M_from_norm <- rebin_norm01(all_tracks_subset, 2e6)
+all_tracks_4M_from_norm <- rebin_norm01(all_tracks_subset, 4e6)
+all_tracks_6M_from_norm <- rebin_norm01(all_tracks_subset, 6e6)
 
 
+# Plot
+plot_species_tracks(all_tracks_2M_from_norm, "Dryas_octopetala_H0",
+  "./plots/Dryas_subset_tracks_norm01_2Mbp.png",
+  "./plots/Dryas_subset_tracks_norm01_2Mbp.pdf")
+
+plot_species_tracks(all_tracks_4M_from_norm, "Dryas_octopetala_H0",
+  "./plots/Dryas_subset_tracks_norm01_4Mbp.png",
+  "./plots/Dryas_subset_tracks_norm01_4Mbp.pdf")
+
+plot_species_tracks(all_tracks_6M_from_norm, "Dryas_octopetala_H0",
+  "./plots/Dryas_subset_tracks_norm01_6Mbp.png",
+  "./plots/Dryas_subset_tracks_norm01_6Mbp.pdf")
 
 
+# then plot Oxyria
+plot_species_tracks(all_tracks_2M_from_norm, "Oxyria_digyna",
+  "./plots/Oxyria_subset_tracks_norm01_2Mbp.png",
+  "./plots/Oxyria_subset_tracks_norm01_2Mbp.pdf")
 
+plot_species_tracks(all_tracks_4M_from_norm, "Oxyria_digyna",
+  "./plots/Oxyria_subset_tracks_norm01_4Mbp.png",
+  "./plots/Oxyria_subset_tracks_norm01_4Mbp.pdf")
 
-
-
+plot_species_tracks(all_tracks_6M_from_norm, "Oxyria_digyna",
+  "./plots/Oxyria_subset_tracks_norm01_6Mbp.png",
+  "./plots/Oxyria_subset_tracks_norm01_6Mbp.pdf")
 
 
 
