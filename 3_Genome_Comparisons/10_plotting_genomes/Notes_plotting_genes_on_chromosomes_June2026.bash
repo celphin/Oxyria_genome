@@ -1404,7 +1404,7 @@ plot_species_tracks(
 
 
 #-----------------------------
-# Need to join Oxyria chromosome names and subset to reasonable number of factors
+# Subset to reasonable number of factors
 
 unique(all_tracks_extended$track)
  # [1] "Gene density"                      "WGD"
@@ -1487,10 +1487,13 @@ plot_species_tracks(all_tracks_6M_from_norm, "Oxyria_digyna",
   "./plots/Oxyria_subset_tracks_norm01_6Mbp.png",
   "./plots/Oxyria_subset_tracks_norm01_6Mbp.pdf")
 
+#####################################
+# Need to join Oxyria chromosome names 
+
+# Adjust normalized counts properly for window sizes
 
 
-
-
+# Need to divide gene class counts by total gene counts in each window
 
 
 
