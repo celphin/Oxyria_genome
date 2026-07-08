@@ -204,6 +204,11 @@ R
 library(dplyr)
 library(ggplot2) 
 library(tidyverse)
+library(rlang)
+library(tidyr)
+library(stringr)
+library(tibble)
+
 #library(statebins)
 
 # import a text file with gene positions
@@ -277,7 +282,7 @@ scaffold_lengths <- Spp_genes0 %>%
   group_by(V1) %>%
   summarise(length = max(V5)) %>%
   ungroup()
-  
+
 threshold <- 1e7
 long_scaffolds <- scaffold_lengths %>%
   filter(length > threshold) %>%
@@ -306,6 +311,60 @@ dev.off()
 pdf(paste0("./plots/", Spp, "_gene_density.pdf"))
 print(plottedSppGenes)
 dev.off()
+
+#---------------------------------
+# Plot normalized genes
+
+make_gene_density_norm_1Mb <- function(gff_tbl, species_name, binwidth = 1e6,
+                                       feature_col="V3", feature_value="gene",
+                                       chrcol="V1", poscol="V4",
+                                       threshold = 1e7) {
+  df <- as.data.frame(gff_tbl)
+
+  df <- df %>% filter(.data[[feature_col]] == feature_value)
+
+  scaffold_lengths <- df %>%
+    group_by(.data[[chrcol]]) %>%
+    summarise(length = max(.data[["V5"]]), .groups="drop")
+
+  long_scaffolds <- scaffold_lengths %>%
+    filter(length > threshold) %>%
+    pull(.data[[chrcol]])
+
+  df <- df %>% filter(.data[[chrcol]] %in% long_scaffolds)
+
+  binned <- df %>%
+    transmute(chr = .data[[chrcol]],
+              pos = as.numeric(.data[[poscol]])) %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = n(), .groups="drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+           else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    mutate(dataset = species_name)
+
+  binned
+}
+
+plot_one_species <- function(gff_tbl, species_name) {
+  dat <- make_gene_density_norm_1Mb(gff_tbl, species_name)
+
+  p <- ggplot(dat, aes(x = bin_start / 1e6, y = norm)) +
+    geom_line(linewidth = 0.6, color = "steelblue") +
+    facet_wrap(~ chr, ncol = 1, scales = "free_y") +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized gene density (0–1)") +
+    theme_classic()
+
+  out_base <- paste0("./plots/", species_name, "_gene_density_normalized_0_1_1Mb")
+  ggsave(paste0(out_base, ".png"), p, width = 7, height = 12, dpi = 300)
+  ggsave(paste0(out_base, ".pdf"), p, width = 7, height = 12)
+}
+
+plot_one_species(Dry_genes0, "Dryas_octopetala_H0")
+plot_one_species(Oxy_genes0, "Oxyria_digyna")
 
 #---------------------------------
 # run through all the repeat types
@@ -365,242 +424,998 @@ for (repeat_type in unique_repeat_types) {
 # Oxyria - No data for repeat type: PIF_Harbinger_TIR_transposon
 
 #----------------------------
+# Normalize from 0-1 again
+
+make_repeat_bp_density_norm_1Mb_by_type <- function(Spp_TE_repeats0, Spp, binwidth = 1e6, threshold = 1e7,
+                                                        normalize_bins_to_0_1 = TRUE) {
+
+  scaffold_lengths <- Spp_TE_repeats0 %>%
+    as.data.frame() %>%
+    group_by(V1) %>%
+    summarise(length = max(V5), .groups="drop")
+
+  long_scaffolds <- scaffold_lengths %>%
+    filter(length > threshold) %>%
+    pull(V1)
+
+  unique_repeat_types <- unique(Spp_TE_repeats0$V3)
+
+  for (repeat_type in unique_repeat_types) {
+
+    filtered_repeats <- Spp_TE_repeats0 %>%
+      filter(V1 %in% long_scaffolds, V3 == repeat_type)
+
+    if (nrow(filtered_repeats) == 0) {
+      message(paste("No data on more than 1 chromosome for repeat type:", repeat_type))
+      next
+    }
+
+    df <- as.data.frame(filtered_repeats)
+
+    # start/end
+    df <- df %>%
+      transmute(
+        chr = V1,
+        start = as.numeric(V4),
+        end   = as.numeric(V5),
+        rep_bp = (as.numeric(V5) - as.numeric(V4) + 1),
+        pos = as.numeric(V4)
+      ) %>%
+      filter(is.finite(rep_bp), rep_bp >= 0)
+
+    # Put each repeat into the bin of its START (common/simple approach)
+    df <- df %>%
+      mutate(bin_start = floor(pos / binwidth) * binwidth)
+
+    binned <- df %>%
+      group_by(chr, bin_start) %>%
+      summarise(total_rep_bp = sum(rep_bp, na.rm = TRUE), .groups="drop") %>%
+      mutate(rep_bp_per_1Mb = total_rep_bp / binwidth)
+
+    if (normalize_bins_to_0_1) {
+      mn <- min(binned$rep_bp_per_1Mb, na.rm = TRUE)
+      mx <- max(binned$rep_bp_per_1Mb, na.rm = TRUE)
+      binned <- binned %>%
+        mutate(norm = if (mx == mn) 0 else (rep_bp_per_1Mb - mn) / (mx - mn))
+    }
+
+    # Plot
+    p <- ggplot(binned, aes(x = bin_start / 1e6)) +
+      geom_line(aes(y = if (normalize_bins_to_0_1) norm else rep_bp_per_1Mb),
+                linewidth = 0.6) +
+      facet_wrap(~ chr, ncol = 1) +
+      theme_classic() +
+      xlab("Genomic position (Mb, 1 Mb windows)") +
+      ylab(if (normalize_bins_to_0_1) "Normalized repeat abundance (0–1)" else "Repeat abundance (bp/1Mb)") +
+      ggtitle(paste(Spp, "-", repeat_type))
+
+    filename_png <- paste0("./plots/", Spp, "_repeats_", gsub(" ", "_", repeat_type), "_bp_per_1Mb.png")
+    filename_pdf <- paste0("./plots/", Spp, "_repeats_", gsub(" ", "_", repeat_type), "_bp_per_1Mb.pdf")
+
+    ggsave(filename_png, p, width = 7, height = 12, dpi = 300)
+    ggsave(filename_pdf, p, width = 7, height = 12)
+  }
+}
+
+# Example: run for each species separately (Oxyria then Dryas)
+make_repeat_bp_density_norm_1Mb_by_type(Spp_TE_repeats0 = Oxy_TE_repeats0, Spp = "Oxyria_digyna", normalize_bins_to_0_1 = TRUE)
+make_repeat_bp_density_norm_1Mb_by_type(Spp_TE_repeats0 = Dry_TE_repeats0, Spp = "Dryas_octopetala_H0", normalize_bins_to_0_1 = TRUE)
+
+
+
+#----------------------------
 # Gene duplicates
 #--------------------------
-Spp="Dryas_octopetala_H0"
-wgddata <- Dry_wgd0
-tanddata <- Dry_tandem0
-proxdata <- Dry_proximal0
-transdata <- Dry_transposed0 
-dispdata <- Dry_dispersed0
+# Normalize gene duplicate counts from 0-1
 
-Spp="Oxyria_digyna"
-wgddata <- Oxy_wgd0
-tanddata <- Oxy_tandem0
-proxdata <- Oxy_proximal0
-transdata <- Oxy_transposed0 
-dispdata <- Oxy_dispersed0
+dup_bins_norm_1Mb <- function(dup_pairs_tbl, dataset_name, binwidth = 1e6, threshold = 1e7) {
+  # dup_pairs_tbl has columns Location and Location.1 (as in your code)
+  location_data <- dup_pairs_tbl %>%
+    select(Location, Location.1) %>%
+    pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
+    separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
 
-#---------------------------
-#WGD
- # Step 1: Split Location columns to extract chromosome and position
-location_data <- wgddata %>%
-  select(Location, Location.1) %>%
-  pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
-  separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
+  scaffold_lengths <- location_data %>%
+    as.data.frame() %>%
+    group_by(chr) %>%
+    summarise(length = max(pos), .groups = "drop")
 
-scaffold_lengths <- location_data %>%
-  as.data.frame() %>%
-  group_by(chr) %>%
-  summarise(length = max(pos)) %>%
-  ungroup()
+  long_scaffolds <- scaffold_lengths %>%
+    filter(length > threshold) %>%
+    pull(chr)
 
-threshold <- 1e7
-long_scaffolds <- scaffold_lengths %>%
-  filter(length > threshold) %>%
-  pull(chr)
+  location_data <- location_data %>% filter(chr %in% long_scaffolds)
+  location_data$pos <- as.numeric(location_data$pos)
 
-  # Filter for the current repeat type
-  filtered_data <- location_data %>%
-    filter(chr %in% long_scaffolds)
+  binned <- location_data %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    mutate(dataset = dataset_name)
 
-location_data <- filtered_data
+  binned
+}
 
-# Convert pos to numeric
-location_data$pos <- as.numeric(location_data$pos)
+# ---- Run for each species / duplication class, collect for later combined plotting ----
+dup_collect <- function(Spp, wgddata, tanddata, proxdata, transdata, dispdata) {
+  bind_rows(
+    dup_bins_norm_1Mb(wgddata,  paste0(Spp), 1e6) %>% mutate(track = "WGD"),
+    dup_bins_norm_1Mb(tanddata, paste0(Spp), 1e6) %>% mutate(track = "Tandem"),
+    dup_bins_norm_1Mb(proxdata, paste0(Spp), 1e6) %>% mutate(track = "Proximal"),
+    dup_bins_norm_1Mb(transdata,paste0(Spp), 1e6) %>% mutate(track = "Transposed"),
+    dup_bins_norm_1Mb(dispdata, paste0(Spp), 1e6) %>% mutate(track = "Dispersed")
+  )
+}
 
-# Step 2: Create the histogram plot
-plotted_locations <- ggplot(location_data) + 
-  geom_histogram(aes(x = pos), binwidth = 1000000) + 
-  facet_wrap(~chr, ncol = 1) + 
-  xlab("Genomic position (bins 1 Mb)") + 
-  theme_classic() +
-  ylab("Number of locations") +
-  ggtitle("Histogram of Locations")
+dup_oxy <- dup_collect("Oxyria_digyna", Oxy_wgd0, Oxy_tandem0, Oxy_proximal0, Oxy_transposed0, Oxy_dispersed0)
+dup_dry <- dup_collect("Dryas_octopetala_H0", Dry_wgd0, Dry_tandem0, Dry_proximal0, Dry_transposed0, Dry_dispersed0)
 
-# Step 3: Save the plot to an image file
-png(paste0(Spp, "_wgd_location_histogram.png"), width = 700, height = 1500)
-print(plotted_locations)
-dev.off()
-pdf(paste0(Spp, "_wgd_location_histogram.pdf"))
-print(plotted_locations)
-dev.off()
-#---------------------------
-#Tandem
- # Step 1: Split Location columns to extract chromosome and position
-location_data <- tanddata %>%
-  select(Location, Location.1) %>%
-  pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
-  separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
+dup_all <- bind_rows(dup_oxy, dup_dry)
 
-scaffold_lengths <- location_data %>%
-  as.data.frame() %>%
-  group_by(chr) %>%
-  summarise(length = max(pos)) %>%
-  ungroup()
+#------------
+# Plot gene duplications
+plot_dup_species <- function(dup_all, species_name, out_png, out_pdf) {
+  dat <- dup_all %>% filter(dataset == species_name)
 
-threshold <- 1e7
-long_scaffolds <- scaffold_lengths %>%
-  filter(length > threshold) %>%
-  pull(chr)
+  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm, color = track, linetype = track)) +
+    geom_line(linewidth = 0.6) +
+    facet_wrap(~ chr, ncol = 1) +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized duplication location density (0–1)") +
+    theme_classic() +
+    ggtitle(species_name)
 
-  # Filter for the current repeat type
-  filtered_data <- location_data %>%
-    filter(chr %in% long_scaffolds)
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
 
-location_data <- filtered_data
+# dup_all from the previous step
+plot_dup_species(
+  dup_all, "Oxyria_digyna",
+  "./plots/Oxyria_digyna_duplications_normalized_0_1.png",
+  "./plots/Oxyria_digyna_duplications_normalized_0_1.pdf"
+)
 
-# Convert pos to numeric
-location_data$pos <- as.numeric(location_data$pos)
+plot_dup_species(
+  dup_all, "Dryas_octopetala_H0",
+  "./plots/Dryas_octopetala_H0_duplications_normalized_0_1.png",
+  "./plots/Dryas_octopetala_H0_duplications_normalized_0_1.pdf"
+)
 
-# Step 2: Create the histogram plot
-plotted_locations <- ggplot(location_data) + 
-  geom_histogram(aes(x = pos), binwidth = 1000000) + 
-  facet_wrap(~chr, ncol = 1) + 
-  xlab("Genomic position (bins 1 Mb)") + 
-  theme_classic() +
-  ylab("Number of locations") +
-  ggtitle("Histogram of Locations")
+#-------------------
+# Add plot of total gene duplications
 
-# Step 3: Save the plot to an image file
-png(paste0("./plots/", Spp, "_tandem_location_histogram.png"), width = 700, height = 1500)
-print(plotted_locations)
-dev.off()
-pdf(paste0("./plots/", Spp, "_tandem_location_histogram.pdf"))
-print(plotted_locations)
-dev.off()
-#---------------------------
-# Proximal
- # Step 1: Split Location columns to extract chromosome and position
-location_data <- proxdata %>%
-  select(Location, Location.1) %>%
-  pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
-  separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
+dup_total_bins_norm_1Mb <- function(dup_pairs_tbl, dataset_name, binwidth = 1e6, threshold = 1e7) {
+  location_data <- dup_pairs_tbl %>%
+    select(Location, Location.1) %>%
+    pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
+    separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
 
-scaffold_lengths <- location_data %>%
-  as.data.frame() %>%
-  group_by(chr) %>%
-  summarise(length = max(pos)) %>%
-  ungroup()
+  scaffold_lengths <- location_data %>%
+    as.data.frame() %>%
+    group_by(chr) %>%
+    summarise(length = max(pos), .groups = "drop")
 
-threshold <- 1e7
-long_scaffolds <- scaffold_lengths %>%
-  filter(length > threshold) %>%
-  pull(chr)
+  long_scaffolds <- scaffold_lengths %>%
+    filter(length > threshold) %>%
+    pull(chr)
 
-  # Filter for the current repeat type
-  filtered_data <- location_data %>%
-    filter(chr %in% long_scaffolds)
+  location_data <- location_data %>% filter(chr %in% long_scaffolds)
+  location_data$pos <- as.numeric(location_data$pos)
 
-location_data <- filtered_data
+  binned <- location_data %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = n(), .groups="drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    mutate(dataset = dataset_name)
 
-# Convert pos to numeric
-location_data$pos <- as.numeric(location_data$pos)
+  binned
+}
 
-# Step 2: Create the histogram plot
-plotted_locations <- ggplot(location_data) + 
-  geom_histogram(aes(x = pos), binwidth = 1000000) + 
-  facet_wrap(~chr, ncol = 1) + 
-  xlab("Genomic position (bins 1 Mb)") + 
-  theme_classic() +
-  ylab("Number of locations") +
-  ggtitle("Histogram of Locations")
+# total duplication counts per 1Mb (sum of all duplication types)
+# If you want “regardless of type” across WGD/Tandem/Proximal/Transposed/Dispersed,
+# bind them first, then bin once.
 
-# Step 3: Save the plot to an image file
-png(paste0("./plots/", Spp, "_proximal_location_histogram.png"), width = 700, height = 1500)
-print(plotted_locations)
-dev.off()
-pdf(paste0("./plots/", Spp, "_proximal_location_histogram.pdf"))
-print(plotted_locations)
-dev.off()
-#---------------------------
-# Transposed
- # Step 1: Split Location columns to extract chromosome and position
-location_data <- transdata %>%
-  select(Location, Location.1) %>%
-  pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
-  separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
+dup_total_alltypes <- function(Spp, wgddata, tanddata, proxdata, transdata, dispdata) {
+  bind_rows(
+    wgddata   %>% mutate(track = "WGD"),
+    tanddata  %>% mutate(track = "Tandem"),
+    proxdata  %>% mutate(track = "Proximal"),
+    transdata %>% mutate(track = "Transposed"),
+    dispdata  %>% mutate(track = "Dispersed")
+  ) %>%
+    select(-track) %>%
+    dup_total_bins_norm_1Mb(., dataset_name = Spp)
+}
 
-scaffold_lengths <- location_data %>%
-  as.data.frame() %>%
-  group_by(chr) %>%
-  summarise(length = max(pos)) %>%
-  ungroup()
+dup_total_oxy <- dup_total_alltypes("Oxyria_digyna", Oxy_wgd0, Oxy_tandem0, Oxy_proximal0, Oxy_transposed0, Oxy_dispersed0)
+dup_total_dry <- dup_total_alltypes("Dryas_octopetala_H0", Dry_wgd0, Dry_tandem0, Dry_proximal0, Dry_transposed0, Dry_dispersed0)
 
-threshold <- 1e7
-long_scaffolds <- scaffold_lengths %>%
-  filter(length > threshold) %>%
-  pull(chr)
+plot_dup_total_species <- function(dup_total_df, out_png, out_pdf) {
+  p <- ggplot(dup_total_df, aes(x = bin_start/1e6, y = norm)) +
+    geom_line(linewidth = 0.7, color = "black") +
+    facet_wrap(~ chr, ncol = 1) +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized total duplication locations (0–1)") +
+    theme_classic() +
+    ggtitle(unique(dup_total_df$dataset))
 
-  # Filter for the current repeat type
-  filtered_data <- location_data %>%
-    filter(chr %in% long_scaffolds)
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
 
-location_data <- filtered_data
+plot_dup_total_species(
+  dup_total_oxy,
+  "./plots/Oxyria_digyna_total_gene_duplications_normalized_0_1.png",
+  "./plots/Oxyria_digyna_total_gene_duplications_normalized_0_1.pdf"
+)
 
-# Convert pos to numeric
-location_data$pos <- as.numeric(location_data$pos)
+plot_dup_total_species(
+  dup_total_dry,
+  "./plots/Dryas_octopetala_H0_total_gene_duplications_normalized_0_1.png",
+  "./plots/Dryas_octopetala_H0_total_gene_duplications_normalized_0_1.pdf"
+)
 
-# Step 2: Create the histogram plot
-plotted_locations <- ggplot(location_data) + 
-  geom_histogram(aes(x = pos), binwidth = 1000000) + 
-  facet_wrap(~chr, ncol = 1) + 
-  xlab("Genomic position (bins 1 Mb)") + 
-  theme_classic() +
-  ylab("Number of locations") +
-  ggtitle("Histogram of Locations")
 
-# Step 3: Save the plot to an image file
-png(paste0("./plots/", Spp, "_transposed_location_histogram.png"), width = 700, height = 1500)
-print(plotted_locations)
-dev.off()
-pdf(paste0("./plots/", Spp, "_transposed_location_histogram.pdf"))
-print(plotted_locations)
-dev.off()
-#---------------------------
-# Dispersed
- # Step 1: Split Location columns to extract chromosome and position
-location_data <- dispdata %>%
-  select(Location, Location.1) %>%
-  pivot_longer(cols = everything(), names_to = "Type", values_to = "Location") %>%
-  separate(Location, into = c("chr", "pos"), sep = ":", convert = TRUE)
 
-scaffold_lengths <- location_data %>%
-  as.data.frame() %>%
-  group_by(chr) %>%
-  summarise(length = max(pos)) %>%
-  ungroup()
+#----------------------------
+# Positively selected genes
+#----------------------------
+pos_sel <- read.table("./Positive_Selection/all_significant_genes_guidance_filtered.tsv",
+                      sep="\t", header=F)
+pos_sel_4spp <- read.table("./Positive_Selection/genes_in_4species_filtered_p.txt",
+                           sep=" ", header=F)
 
-threshold <- 1e7
-long_scaffolds <- scaffold_lengths %>%
-  filter(length > threshold) %>%
-  pull(chr)
+colnames(pos_sel) <- c("OG", "Spp", "p-value")
+colnames(pos_sel_4spp) <- c("OG", "Spp", "p-value")
 
-  # Filter for the current repeat type
-  filtered_data <- location_data %>%
-    filter(chr %in% long_scaffolds)
+#---- helper: bin gene positions to 1Mb and count selected genes per bin ----
+count_selected_genes_1Mb <- function(gff_tbl, gene_names, dataset_name,
+                                       binwidth=1e6, threshold=1e7) {
+  gff <- as.data.frame(gff_tbl)
 
-location_data <- filtered_data
+  gff_genes <- gff %>%
+    dplyr::filter(V3 == "gene")
 
-# Convert pos to numeric
-location_data$pos <- as.numeric(location_data$pos)
+  # case-insensitive matching
+  gene_names_up <- toupper(gene_names)
 
-# Step 2: Create the histogram plot
-plotted_locations <- ggplot(location_data) + 
-  geom_histogram(aes(x = pos), binwidth = 1000000) + 
-  facet_wrap(~chr, ncol = 1) + 
-  xlab("Genomic position (bins 1 Mb)") + 
-  theme_classic() +
-  ylab("Number of locations") +
-  ggtitle("Histogram of Locations")
+  gene_keep <- gff_genes %>%
+    dplyr::mutate(
+      # Extract the value right after ID= up to the next ;
+      gene_id = sub(".*ID=([^;]+).*", "\\1", V9),
+      gene_id_up = toupper(gene_id)
+    ) %>%
+    dplyr::filter(gene_id_up %in% gene_names_up)
 
-# Step 3: Save the plot to an image file
-png(paste0("./plots/", Spp, "_dispersed_location_histogram.png"), width = 700, height = 1500)
-print(plotted_locations)
-dev.off()
-pdf(paste0("./plots/", Spp, "_dispersed_location_histogram.pdf"))
-print(plotted_locations)
-dev.off()
+  scaffold_lengths <- gene_keep %>%
+    dplyr::group_by(V1) %>%
+    dplyr::summarise(length = max(V5), .groups="drop")
+
+  long_scaffolds <- scaffold_lengths %>%
+    dplyr::filter(length > threshold) %>%
+    dplyr::pull(V1)
+
+  gene_keep <- gene_keep %>%
+    dplyr::filter(V1 %in% long_scaffolds)
+
+  binned <- gene_keep %>%
+    dplyr::mutate(
+      pos = as.numeric(V4),
+      bin_start = floor(pos / binwidth) * binwidth
+    ) %>%
+    dplyr::group_by(V1, bin_start) %>%
+    dplyr::summarise(count = dplyr::n(), .groups="drop") %>%
+    dplyr::rename(chr = V1) %>%
+    dplyr::group_by(chr) %>%
+    dplyr::mutate(
+      norm = if (max(count) == min(count)) 0
+      else (count - min(count)) / (max(count) - min(count))
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(dataset = dataset_name)
+
+  binned
+}
+
+#---- run: make selected sets from pos_sel ----
+
+dry_genes <- pos_sel %>%
+  dplyr::filter(stringr::str_detect(Spp, "^DOCTH0_")) %>%
+  dplyr::pull(Spp) %>%
+  unique()
+
+oxy_genes <- pos_sel %>%
+  dplyr::filter(stringr::str_detect(Spp, "^OXYRIA")) %>%
+  dplyr::pull(Spp) %>%
+  unique()
+
+# NOTE: these objects must exist in your environment:
+#   Dry_genes0, Oxy_genes0
+# (They should be your GFF tables for each species, with V1=chr, V3="gene", V4=start, V5=end, V9=attributes.)
+
+Dry_sel_bins <- count_selected_genes_1Mb(
+  gff_tbl = Dry_genes0,
+  gene_names = dry_genes,
+  dataset_name = "Dryas_octopetala_H0"
+)
+
+Oxy_sel_bins <- count_selected_genes_1Mb(
+  gff_tbl = Oxy_genes0,
+  gene_names = oxy_genes,
+  dataset_name = "Oxyria_digyna"
+)
+
+#---- plotting ----
+plot_sel_species <- function(dat, out_png, out_pdf) {
+  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm)) +
+    geom_line(linewidth = 0.7) +
+    facet_wrap(~ chr, ncol = 1) +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized count of positively selected genes (0–1)") +
+    theme_classic() +
+    ggtitle(unique(dat$dataset))
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
+
+plot_sel_species(
+  Dry_sel_bins,
+  "./plots/Dryas_octopetala_H0_positive_selection_genes_count_1Mb_norm.png",
+  "./plots/Dryas_octopetala_H0_positive_selection_genes_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(
+  Oxy_sel_bins,
+  "./plots/Oxyria_digyna_positive_selection_genes_count_1Mb_norm.png",
+  "./plots/Oxyria_digyna_positive_selection_genes_count_1Mb_norm.pdf"
+)
+
+
+
+#----------------------------
+# Core and accessory genes
+#--------------------------
+
+count_bed_1Mb <- function(bed_tbl, dataset_name,
+                           binwidth = 1e6,
+                           min_len = 5e6,
+                           use = c("midpoint","start","end")) {
+
+  use <- match.arg(use)
+  b <- as.data.frame(bed_tbl)
+
+  start <- as.numeric(b$V2)
+  end   <- as.numeric(b$V3)
+  chr   <- as.character(b$V1)
+
+  # compute per-chr length from BED coordinates
+  chr_len <- data.frame(chr = chr, start = start, end = end) %>%
+    dplyr::group_by(chr) %>%
+    dplyr::summarise(length = max(end), .groups="drop")
+
+  keep_chr <- chr_len %>% dplyr::filter(length >= min_len) %>% dplyr::pull(chr)
+
+  keep <- chr %in% keep_chr
+  start <- start[keep]
+  end   <- end[keep]
+  chr   <- chr[keep]
+
+  pos <- switch(use,
+    midpoint = (start + end) / 2,
+    start    = start,
+    end      = end
+  )
+
+  tibble(chr = chr, pos = pos) %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = dplyr::n(), .groups="drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    mutate(dataset = dataset_name)
+}
+
+plot_sel_species <- function(dat, out_png, out_pdf) {
+  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm)) +
+    geom_line(linewidth = 0.7) +
+    facet_wrap(~ chr, ncol = 1) +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized count (0–1)") +
+    theme_classic() +
+    ggtitle(unique(dat$dataset))
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
+
+#---- read your BEDs ----
+Dryas_core <- read.table("./Core_accessory/core_by_species/Dryas_octopetala_core.bed",sep="\t",header=F)
+Oxyria_core <- read.table("./Core_accessory/core_by_species/Oxyria_digyna_H1_core.bed",sep="\t",header=F)
+
+Dryas_accessory <- read.table("./Core_accessory/accessory_by_species/Dryas_octopetala_accessory.bed",sep="\t",header=F)
+Oxyria_accessory <- read.table("./Core_accessory/accessory_by_species/Oxyria_digyna_H1_accessory.bed",sep="\t",header=F)
+
+Dryas_singleton <- read.table("./Core_accessory/singleton_by_species/Dryas_octopetala_singleton.bed",sep="\t",header=F)
+Oxyria_singleton <- read.table("./Core_accessory/singleton_by_species/Oxyria_digyna_H1_singleton.bed",sep="\t",header=F)
+
+#---- bin each category (midpoint) ----
+Dry_core_bins <- count_bed_1Mb(Dryas_core, "Dryas_octopetala_core", binwidth=1e6, min_len = 5e6,use="midpoint")
+Oxy_core_bins <- count_bed_1Mb(Oxyria_core, "Oxyria_digyna_H1_core", binwidth=1e6,min_len = 5e6, use="midpoint")
+
+Dry_acc_bins <- count_bed_1Mb(Dryas_accessory, "Dryas_octopetala_accessory", binwidth=1e6,min_len = 5e6, use="midpoint")
+Oxy_acc_bins <- count_bed_1Mb(Oxyria_accessory, "Oxyria_digyna_H1_accessory", binwidth=1e6, min_len = 5e6,use="midpoint")
+
+Dry_single_bins <- count_bed_1Mb(Dryas_singleton, "Dryas_octopetala_singleton", binwidth=1e6, min_len = 5e6,use="midpoint")
+Oxy_single_bins <- count_bed_1Mb(Oxyria_singleton, "Oxyria_digyna_H1_singleton", binwidth=1e6,min_len = 5e6, use="midpoint")
+
+#---- plot ----
+plot_sel_species(Dry_core_bins,
+  "./plots/Dryas_octopetala_core_count_1Mb_norm.png",
+  "./plots/Dryas_octopetala_core_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(Oxy_core_bins,
+  "./plots/Oxyria_digyna_H1_core_count_1Mb_norm.png",
+  "./plots/Oxyria_digyna_H1_core_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(Dry_acc_bins,
+  "./plots/Dryas_octopetala_accessory_count_1Mb_norm.png",
+  "./plots/Dryas_octopetala_accessory_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(Oxy_acc_bins,
+  "./plots/Oxyria_digyna_H1_accessory_count_1Mb_norm.png",
+  "./plots/Oxyria_digyna_H1_accessory_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(Dry_single_bins,
+  "./plots/Dryas_octopetala_singleton_count_1Mb_norm.png",
+  "./plots/Dryas_octopetala_singleton_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(Oxy_single_bins,
+  "./plots/Oxyria_digyna_H1_singleton_count_1Mb_norm.png",
+  "./plots/Oxyria_digyna_H1_singleton_count_1Mb_norm.pdf"
+)
+
+
+#----------------------------
+# Microsynteny genes
+#--------------------------
+
+#---- parse GFF: gene id -> chr + start/end (case-insensitive) ----
+gff_gene_coords <- function(gff_tbl) {
+  gff <- as.data.frame(gff_tbl)
+  gff_genes <- gff %>% dplyr::filter(V3 == "gene")
+
+  tibble(
+    gene_id = sub(".*ID=([^;]+).*", "\\1", gff_genes$V9),
+    chr = as.character(gff_genes$V1),
+    start = as.numeric(gff_genes$V4),
+    end = as.numeric(gff_genes$V5)
+  ) %>%
+    mutate(gene_id_up = toupper(gene_id))
+}
+
+Dry_gff <- gff_gene_coords(Dry_genes0)
+Oxy_gff <- gff_gene_coords(Oxy_genes0)
+
+#---- helper: bin positions (midpoint), normalize per chr, filter chr length ----
+count_positions_1Mb <- function(chr, pos, dataset_name, binwidth=1e6, min_len=5e6) {
+  chr <- as.character(chr)
+  pos <- as.numeric(pos)
+
+  chr_len <- tibble(chr = chr, pos = pos) %>%
+    group_by(chr) %>%
+    summarise(length = max(pos, na.rm = TRUE), .groups="drop")
+
+  keep_chr <- chr_len %>% filter(length >= min_len) %>% pull(chr)
+
+  df <- tibble(chr = chr, pos = pos) %>%
+    filter(!is.na(pos), chr %in% keep_chr)
+
+  df %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = dplyr::n(), .groups="drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    mutate(dataset = dataset_name)
+}
+
+plot_sel_species <- function(dat, out_png, out_pdf) {
+  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm)) +
+    geom_line(linewidth = 0.7) +
+    facet_wrap(~ chr, ncol = 1) +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized count (0–1)") +
+    theme_classic() +
+    ggtitle(unique(dat$dataset))
+
+  ggsave(out_png, p, width=7, height=12, dpi=300)
+  ggsave(out_pdf, p, width=7, height=12)
+}
+
+#----------------------------
+# microsynteny table
+
+# Example: use the gene id columns shown in your snippet
+Dry_gene_col <- "Dryas.octopetala.Gene.1"
+Oxy_gene_col <- "Oxyria.digyna.Gene.1"
+
+# join microsynteny gene IDs to GFF coords (case-insensitive)
+Dry_mic_pos <- microsyn %>%
+  transmute(gene_id = .data[[Dry_gene_col]],
+            gene_id_up = toupper(gene_id)) %>%
+  inner_join(Dry_gff %>% select(gene_id_up, chr, start, end),
+              by="gene_id_up") %>%
+  mutate(mid = (start + end)/2) %>%
+  select(chr, mid)
+
+Oxy_mic_pos <- microsyn %>%
+  transmute(gene_id = .data[[Oxy_gene_col]],
+            gene_id_up = toupper(gene_id)) %>%
+  inner_join(Oxy_gff %>% select(gene_id_up, chr, start, end),
+              by="gene_id_up") %>%
+  mutate(mid = (start + end)/2) %>%
+  select(chr, mid)
+
+Dry_mic_bins <- count_positions_1Mb(
+  chr = Dry_mic_pos$chr,
+  pos = Dry_mic_pos$mid,
+  dataset_name = "Dryas_octopetala_microsynteny (Gene.1)",
+  binwidth = 1e6,
+  min_len = 5e6
+)
+
+Oxy_mic_bins <- count_positions_1Mb(
+  chr = Oxy_mic_pos$chr,
+  pos = Oxy_mic_pos$mid,
+  dataset_name = "Oxyria_digyna_microsynteny (Gene.1)",
+  binwidth = 1e6,
+  min_len = 5e6
+)
+
+# plot
+plot_sel_species(Dry_mic_bins,
+  "./plots/Dryas_octopetala_microsynteny_gene1_count_1Mb_norm.png",
+  "./plots/Dryas_octopetala_microsynteny_gene1_count_1Mb_norm.pdf"
+)
+
+plot_sel_species(Oxy_mic_bins,
+  "./plots/Oxyria_digyna_microsynteny_gene1_count_1Mb_norm.png",
+  "./plots/Oxyria_digyna_microsynteny_gene1_count_1Mb_norm.pdf"
+)
+
+#----------------------------
+# Centromere locations - another time
+#--------------------------
+# # Centromere locations
+# Dryas_cent_pos <- read.table("./Centromeres/DryOcto_H0-AT_total_possible_range.txt",sep="\t",header=T)
+# Oxyria_cent_pos <- read.table("./Centromeres/Oxydig_H1-AT_total_possible_range.txt",sep="\t",header=T)
+
+
+#---------------------
+# Plot all
+# LTRs, total gene duplications, core/accessory 
+#---------------------
+
+#-----------------------------
+# 1) Standardize outputs
+#    Expected columns:
+#    chr, bin_start (bp), norm (0-1), track (dataset name), species
+#-----------------------------
+
+# Dry/Oxy gene density: your make_gene_density_norm_1Mb already outputs chr, bin_start, norm
+gene_tracks <- bind_rows(
+  make_gene_density_norm_1Mb(Dry_genes0, "Dryas_octopetala_H0") %>%
+    mutate(track = "Gene density", species = "Dryas_octopetala_H0"),
+  make_gene_density_norm_1Mb(Oxy_genes0, "Oxyria_digyna") %>%
+    mutate(track = "Gene density", species = "Oxyria_digyna")
+)
+
+# Duplication (you already have) -> dup_all includes: chr, bin_start, norm, track, dataset
+dup_tracks <- dup_all %>%
+  transmute(
+    chr,
+    bin_start,
+    norm,
+    track = track,               # WGD/Tandem/...
+    species = dataset
+  )
+
+# Total duplications -> you need to create a combined df in the same schema
+dup_total_tracks <- bind_rows(
+  dup_total_oxy %>% transmute(chr, bin_start, norm, track = "Total duplications", species = dataset),
+  dup_total_dry %>% transmute(chr, bin_start, norm, track = "Total duplications", species = dataset)
+)
+
+# If you later want repeats-by-type, you can bind them too once you have them as:
+# chr, bin_start, norm, track (repeat type), species
+
+
+#-----------------------------
+# 2) Combine everything into one long df
+#-----------------------------
+all_tracks_raw <- bind_rows(
+  gene_tracks,
+  dup_tracks,
+  dup_total_tracks
+)
+
+
+# ---- repeats filter subset (edit these) ----
+unique(Spp_TE_repeats0$V3)
+
+ # [1] "Mutator_TIR_transposon"       "helitron"
+ # [3] "Copia_LTR_retrotransposon"    "CACTA_TIR_transposon"
+ # [5] "PIF_Harbinger_TIR_transposon" "LTR_retrotransposon"
+ # [7] "hAT_TIR_transposon"           "Tc1_Mariner_TIR_transposon"
+ # [9] "Gypsy_LTR_retrotransposon"    "repeat_region"
+# [11] "target_site_duplication"      "long_terminal_repeat"
+
+repeat_types_keep <- c(
+  "Copia_LTR_retrotransposon", "Gypsy_LTR_retrotransposon", "CACTA_TIR_transposon", "hAT_TIR_transposon"
+)
+
+# ---- Helper: re-bin any “track-like” table already in chr/bin_start/norm ----
+renorm_per_track_chr01 <- function(dat) {
+  dat %>%
+    group_by(species, track, chr) %>%
+    mutate(norm01 = if (max(norm, na.rm = TRUE) == min(norm, na.rm = TRUE)) 0
+                     else (norm - min(norm, na.rm = TRUE)) /
+                          (max(norm, na.rm = TRUE) - min(norm, na.rm = TRUE))) %>%
+    ungroup()
+}
+
+#-----------------------------
+# 1) Repeats (subset by repeat type) into the common schema
+#-----------------------------
+make_repeats_bins_subset <- function(Spp_TE_repeats0, species_name,
+                                      repeat_types_keep,
+                                      binwidth = 1e6, threshold = 1e7,
+                                      normalize_bins_to_0_1 = FALSE) {
+
+  scaffold_lengths <- Spp_TE_repeats0 %>%
+    group_by(V1) %>%
+    summarise(length = max(V5), .groups = "drop")
+
+  long_scaffolds <- scaffold_lengths %>%
+    filter(length > threshold) %>%
+    pull(V1)
+
+  df <- Spp_TE_repeats0 %>%
+    filter(V1 %in% long_scaffolds, V3 %in% repeat_types_keep)
+
+  # bin on repeat start (V4)
+  df2 <- df %>%
+    transmute(
+      chr = V1,
+      start = as.numeric(V4),
+      end   = as.numeric(V5),
+      pos = as.numeric(V4),
+      rep_bp = (as.numeric(V5) - as.numeric(V4) + 1),
+      repeat_type = V3
+    ) %>%
+    filter(is.finite(rep_bp), rep_bp >= 0, is.finite(pos))
+
+  binned <- df2 %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start, repeat_type) %>%
+    summarise(total_rep_bp = sum(rep_bp, na.rm = TRUE), .groups = "drop") %>%
+    mutate(rep_bp_per_1Mb = total_rep_bp / binwidth) %>%
+    ungroup()
+
+  # put into common schema: norm is either already 0-1 or raw
+  if (normalize_bins_to_0_1) {
+    binned <- binned %>%
+      group_by(repeat_type, chr) %>%
+      mutate(norm = if (max(rep_bp_per_1Mb, na.rm = TRUE) == min(rep_bp_per_1Mb, na.rm = TRUE)) 0
+                     else (rep_bp_per_1Mb - min(rep_bp_per_1Mb, na.rm = TRUE)) /
+                          (max(rep_bp_per_1Mb, na.rm = TRUE) - min(rep_bp_per_1Mb, na.rm = TRUE))) %>%
+      ungroup()
+  } else {
+    binned <- binned %>% mutate(norm = rep_bp_per_1Mb)
+  }
+
+  binned %>%
+    transmute(
+      chr,
+      bin_start,
+      norm,
+      track = paste0("Repeat: ", repeat_type),
+      species = species_name
+    )
+}
+
+# ---- build repeat track dataframes (subset) ----
+rep_tracks <- bind_rows(
+  make_repeats_bins_subset(Oxy_TE_repeats0, "Oxyria_digyna",
+                            repeat_types_keep = repeat_types_keep,
+                            normalize_bins_to_0_1 = FALSE),
+  make_repeats_bins_subset(Dry_TE_repeats0, "Dryas_octopetala_H0",
+                            repeat_types_keep = repeat_types_keep,
+                            normalize_bins_to_0_1 = FALSE)
+)
+
+#-----------------------------
+# 2) Positive selection tracks -> common schema
+#-----------------------------
+count_selected_genes_1Mb_to_tracks <- function(gff_tbl, gene_names, dataset_name,
+                                                 binwidth = 1e6, threshold = 1e7) {
+  gff_genes <- as.data.frame(gff_tbl) %>%
+    filter(V3 == "gene") %>%
+    mutate(gene_id = sub(".*ID=([^;]+).*", "\\1", V9),
+           gene_id_up = toupper(gene_id)) %>%
+    filter(toupper(gene_id_up) %in% toupper(gene_names))
+
+  scaffold_lengths <- gff_genes %>%
+    group_by(V1) %>%
+    summarise(length = max(V5), .groups="drop")
+
+  long_scaffolds <- scaffold_lengths %>%
+    filter(length > threshold) %>%
+    pull(V1)
+
+  gff_genes <- gff_genes %>% filter(V1 %in% long_scaffolds)
+
+  binned <- gff_genes %>%
+    mutate(pos = as.numeric(V4),
+           bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(V1, bin_start) %>%
+    summarise(count = dplyr::n(), .groups="drop") %>%
+    rename(chr = V1) %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    transmute(chr, bin_start, norm,
+              track = "Positively selected genes",
+              species = dataset_name)
+
+  binned
+}
+
+# ---- make dry/oxy selected gene lists exactly like your code ----
+pos_sel <- read.table("./Positive_Selection/all_significant_genes_guidance_filtered.tsv",
+                      sep="\t", header=F)
+colnames(pos_sel) <- c("OG", "Spp", "p-value")
+
+dry_genes <- pos_sel %>%
+  filter(stringr::str_detect(Spp, "^DOCTH0_")) %>%
+  pull(Spp) %>% unique()
+
+oxy_genes <- pos_sel %>%
+  filter(stringr::str_detect(Spp, "^OXYRIA")) %>%
+  pull(Spp) %>% unique()
+
+sel_tracks <- bind_rows(
+  count_selected_genes_1Mb_to_tracks(Dry_genes0, dry_genes, "Dryas_octopetala_H0"),
+  count_selected_genes_1Mb_to_tracks(Oxy_genes0, oxy_genes, "Oxyria_digyna")
+)
+
+#-----------------------------
+# 3) Core/accessory/singleton tracks -> common schema
+#-----------------------------
+count_bed_1Mb_to_track <- function(bed_tbl, dataset_name,
+                                     track_name,
+                                     binwidth = 1e6, min_len = 5e6, use="midpoint") {
+  b <- as.data.frame(bed_tbl)
+
+  start <- as.numeric(b$V2)
+  end   <- as.numeric(b$V3)
+  chr   <- as.character(b$V1)
+
+  chr_len <- data.frame(chr=chr, start=start, end=end) %>%
+    group_by(chr) %>%
+    summarise(length = max(end), .groups="drop")
+
+  keep_chr <- chr_len %>% filter(length >= min_len) %>% pull(chr)
+
+  keep <- chr %in% keep_chr
+  start <- start[keep]; end <- end[keep]; chr <- chr[keep]
+
+  pos <- switch(use,
+    midpoint = (start + end)/2,
+    start = start,
+    end = end
+  )
+
+  tibble(chr = chr, pos = pos) %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = dplyr::n(), .groups="drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    transmute(chr, bin_start, norm,
+              track = track_name,
+              species = dataset_name)
+}
+
+Dryas_core <- read.table("./Core_accessory/core_by_species/Dryas_octopetala_core.bed",sep="\t",header=F)
+Oxyria_core <- read.table("./Core_accessory/core_by_species/Oxyria_digyna_H1_core.bed",sep="\t",header=F)
+
+Dryas_accessory <- read.table("./Core_accessory/accessory_by_species/Dryas_octopetala_accessory.bed",sep="\t",header=F)
+Oxyria_accessory <- read.table("./Core_accessory/accessory_by_species/Oxyria_digyna_H1_accessory.bed",sep="\t",header=F)
+
+Dryas_singleton <- read.table("./Core_accessory/singleton_by_species/Dryas_octopetala_singleton.bed",sep="\t",header=F)
+Oxyria_singleton <- read.table("./Core_accessory/singleton_by_species/Oxyria_digyna_H1_singleton.bed",sep="\t",header=F)
+
+core_tracks <- bind_rows(
+  count_bed_1Mb_to_track(Dryas_core, "Dryas_octopetala_H0", "Core genes", use="midpoint"),
+  count_bed_1Mb_to_track(Oxyria_core, "Oxyria_digyna", "Core genes", use="midpoint"),
+  count_bed_1Mb_to_track(Dryas_accessory, "Dryas_octopetala_H0", "Accessory genes", use="midpoint"),
+  count_bed_1Mb_to_track(Oxyria_accessory, "Oxyria_digyna", "Accessory genes", use="midpoint"),
+  count_bed_1Mb_to_track(Dryas_singleton, "Dryas_octopetala_H0", "Singleton genes", use="midpoint"),
+  count_bed_1Mb_to_track(Oxyria_singleton, "Oxyria_digyna", "Singleton genes", use="midpoint")
+)
+
+#-----------------------------
+# 4) Microsynteny tracks -> common schema
+#-----------------------------
+gff_gene_coords <- function(gff_tbl) {
+  gff_genes <- as.data.frame(gff_tbl) %>% filter(V3 == "gene")
+  tibble(
+    gene_id = sub(".*ID=([^;]+).*", "\\1", gff_genes$V9),
+    chr = as.character(gff_genes$V1),
+    start = as.numeric(gff_genes$V4),
+    end = as.numeric(gff_genes$V5)
+  ) %>%
+    mutate(gene_id_up = toupper(gene_id))
+}
+
+count_positions_1Mb_to_track <- function(chr, pos, dataset_name, track_name,
+                                         binwidth=1e6, min_len=5e6) {
+  chr <- as.character(chr)
+  pos <- as.numeric(pos)
+
+  chr_len <- tibble(chr = chr, pos = pos) %>%
+    group_by(chr) %>%
+    summarise(length = max(pos, na.rm = TRUE), .groups="drop")
+
+  keep_chr <- chr_len %>% filter(length >= min_len) %>% pull(chr)
+
+  df <- tibble(chr = chr, pos = pos) %>%
+    filter(!is.na(pos), chr %in% keep_chr)
+
+  df %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(count = dplyr::n(), .groups="drop") %>%
+    group_by(chr) %>%
+    mutate(norm = if (max(count) == min(count)) 0
+                   else (count - min(count)) / (max(count) - min(count))) %>%
+    ungroup() %>%
+    transmute(chr, bin_start, norm,
+              track = track_name,
+              species = dataset_name)
+}
+
+microsyn <- read.table("Microsynteny.csv", sep=",", header=TRUE)
+
+Dry_gene_col <- "Dryas.octopetala.Gene.1"
+Oxy_gene_col <- "Oxyria.digyna.Gene.1"
+
+Dry_gff <- gff_gene_coords(Dry_genes0)
+Oxy_gff <- gff_gene_coords(Oxy_genes0)
+
+Dry_mic_pos <- microsyn %>%
+  transmute(gene_id = .data[[Dry_gene_col]],
+            gene_id_up = toupper(gene_id)) %>%
+  inner_join(Dry_gff %>% select(gene_id_up, chr, start, end), by="gene_id_up") %>%
+  mutate(mid = (start + end)/2) %>%
+  select(chr, mid)
+
+Oxy_mic_pos <- microsyn %>%
+  transmute(gene_id = .data[[Oxy_gene_col]],
+            gene_id_up = toupper(gene_id)) %>%
+  inner_join(Oxy_gff %>% select(gene_id_up, chr, start, end), by="gene_id_up") %>%
+  mutate(mid = (start + end)/2) %>%
+  select(chr, mid)
+
+microsynt_tracks <- bind_rows(
+  count_positions_1Mb_to_track(Dry_mic_pos$chr, Dry_mic_pos$mid,
+                                "Dryas_octopetala_H0",
+                                "Microsynteny (Gene.1)",
+                                binwidth=1e6, min_len=5e6),
+  count_positions_1Mb_to_track(Oxy_mic_pos$chr, Oxy_mic_pos$mid,
+                                "Oxyria_digyna",
+                                "Microsynteny (Gene.1)",
+                                binwidth=1e6, min_len=5e6)
+)
+
+#-----------------------------
+# 5) Combine with your existing gene+duplication tracks (assumes:
+#    all_tracks_raw exists with columns: chr, bin_start, norm, track, species)
+#-----------------------------
+all_tracks_extended_raw <- bind_rows(
+  all_tracks_raw,     # gene density + WGD/Tandem/... + total duplications (from your earlier combined step)
+  rep_tracks,
+  sel_tracks,
+  core_tracks,
+  microsynt_tracks
+)
+
+all_tracks_extended <- renorm_per_track_chr01(all_tracks_extended_raw) %>%
+  rename(norm01 = norm01)
+
+#-----------------------------
+# 6) Separate plot per species
+#-----------------------------
+plot_species_tracks <- function(dat, species_name, out_png, out_pdf) {
+  dat <- dat %>% filter(species == species_name)
+
+  p <- ggplot(dat, aes(x = bin_start / 1e6, y = norm01,
+                        color = track, linetype = track)) +
+    geom_line(linewidth = 0.6, alpha = 0.95) +
+    facet_wrap(~ chr, ncol = 1, scales = "fixed") +
+    labs(x = "Genomic position (Mb, 1 Mb bins)",
+         y = "Normalized value (0–1)",
+         title = species_name) +
+    theme_classic() +
+    theme(legend.position = "right")
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
+
+plot_species_tracks(
+  all_tracks_extended, "Dryas_octopetala_H0",
+  "./plots/Dryas_combined_plus_repeats_sel_core_microsynt_norm01.png",
+  "./plots/Dryas_combined_plus_repeats_sel_core_microsynt_norm01.pdf"
+)
+
+plot_species_tracks(
+  all_tracks_extended, "Oxyria_digyna",
+  "./plots/Oxyria_combined_plus_repeats_sel_core_microsynt_norm01.png",
+  "./plots/Oxyria_combined_plus_repeats_sel_core_microsynt_norm01.pdf"
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#############################
+# OLDER
+
+
 
 #############################
 # Join gene duplicates with Sequence IDs
