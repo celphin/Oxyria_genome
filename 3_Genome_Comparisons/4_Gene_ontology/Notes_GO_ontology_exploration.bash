@@ -43,6 +43,21 @@ cat *_totalfam_rapidly_contracted_genesets.ermine.results | awk -F '\t' '$7 <0.5
 cat *_totalfam_rapidly_expanded_genesets.ermine.results | awk -F '\t' '$7 <0.5 { print }' |awk  -F $'\t' '{print $3, $2}' | sort | uniq -c | sort | awk '$1 > 1' | wc -l
 #15 in 2 or more
 
+# look at values
+
+cat *_Arctic_specific_genesets.ermine.results | awk -F '\t' '$7 <0.5 { print }' | awk  -F $'\t' '{print $3, $2}' | sort | uniq -c | sort | awk '$1 > 1'  
+#85
+
+
+cat *_totalfam_all_contracted_genesets.ermine.results  | awk -F '\t' '$7 <0.5 { print }' |awk  -F $'\t' '{print $3, $2}' | sort | uniq -c | sort | awk '$1 > 3' 
+#31 in all 4
+cat *_totalfam_all_expanded_genesets.ermine.results | awk -F '\t' '$7 <0.5 { print }' |awk  -F $'\t' '{print $3, $2}' | sort | uniq -c | sort | awk '$1 > 3' 
+#15 in all 4
+cat *_totalfam_rapidly_contracted_genesets.ermine.results | awk -F '\t' '$7 <0.5 { print }' |awk  -F $'\t' '{print $3, $2}' | sort | uniq -c | sort | awk '$1 > 1' 
+#9 in 2 or more
+cat *_totalfam_rapidly_expanded_genesets.ermine.results | awk -F '\t' '$7 <0.5 { print }' |awk  -F $'\t' '{print $3, $2}' | sort | uniq -c | sort | awk '$1 > 1' 
+#15 in 2 or more
+
 
 
 

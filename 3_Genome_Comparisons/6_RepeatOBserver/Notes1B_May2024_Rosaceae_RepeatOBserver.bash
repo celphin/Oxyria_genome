@@ -10,7 +10,7 @@
 # D. alas (sca) https://www.ncbi.nlm.nih.gov/datasets/genome/GCA_026122645.1/
 
 ###########################################
-
+# Nibi
 cd /home/celphin/scratch/repeats/auto_script/
 
 # download the Setup_Run_Repeats.sh from github

@@ -1112,3 +1112,177 @@ cat Oxydig_contractedfams Drabaniv_contractedfams Dryasoct_contractedfams Cochgr
         4 OG0001477
       4 OG0002438
       4 OG0002440
+
+
+
+##########################
+# What are these OGs
+
+# Fir
+cd /home/celphin/scratch/Oxyria/CAFE/enrichment_analysis
+
+# Contracted
+grep OG0001477 N0.tsv
+grep Oxyria_NCBI_Chr500001273 Total_interproscan_output_edited3.tsv
+grep Oxyria_NCBI_Chr100004070 Total_interproscan_output_edited3.tsv
+grep Oxyria_NCBI_Chr500004596  Total_interproscan_output_edited3.tsv
+#  ATP binding site, Leucine-rich repeat
+
+grep OG0002438 N0.tsv
+grep Oxyria_NCBI_Chr500002419 Total_interproscan_output_edited3.tsv
+grep Oxyria_NCBI_Chr300000490   Total_interproscan_output_edited3.tsv
+# ATP binding site, Protein kinase domain
+# change in metabolism? 
+
+grep OG0002440 N0.tsv
+grep Oxyria_NCBI_Chr600002208 Total_interproscan_output_edited3.tsv
+grep Oxyria_NCBI_Chr700002950 Total_interproscan_output_edited3.tsv
+grep Oxyria_NCBI_Chr400000626 Total_interproscan_output_edited3.tsv
+ #  apoptosis signaling "B-cell receptor-associated protein 29/31" 
+
+#--------------------
+# expanded
+      # 3 OG0000494
+grep OG0000494 N0.tsv
+grep  Oxyria_NCBI_Chr600004279  Total_interproscan_output_edited3.tsv
+# Unknown
+
+      # 3 OG0000729
+grep OG0000494 N0.tsv
+grep   Oxyria_NCBI_Chr300002214  Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0001682
+grep OG0001682 N0.tsv
+grep  Oxyria_NCBI_Chr300002786 Total_interproscan_output_edited3.tsv
+# Protein MAINTENANCE OF MERISTEMS-like
+
+# 3 OG0001924
+grep OG0001924 N0.tsv
+grep  DoctH0_Chr600000916 Total_interproscan_output_edited3.tsv
+# Pectin lyase fold/virulence factor
+
+# 3 OG0002694
+grep OG0002694 N0.tsv
+grep DoctH0_Chr800005599 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0002766
+grep OG0002766 N0.tsv
+grep  DoctH0_Chr200008128 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0003559
+grep OG0003559 N0.tsv
+grep  Oxyria_NCBI_Chr700000332 Total_interproscan_output_edited3.tsv
+# Pyruvate carboxyltransferase
+
+# 3 OG0003607
+grep OG0003607 N0.tsv
+grep  Oxyria_NCBI_Chr100002042 Total_interproscan_output_edited3.tsv
+# Protein phosphatase inhibitor 2 (IPP-2)
+
+# 3 OG0004403
+grep OG0004403 N0.tsv
+grep DoctH0_Chr700005280 Total_interproscan_output_edited3.tsv
+# Protein TAR1 - transcriptional adaptor 1
+
+# 3 OG0004429
+grep OG0004429 N0.tsv
+grep  Oxyria_NCBI_Chr200004896  Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0005000
+grep OG0005000 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0005073
+grep OG0005073 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0005805
+grep OG0005805 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0006063
+grep OG0006063 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0006331
+grep OG0006331 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0007110
+grep OG0007110 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0007184
+grep OG0007184 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0008014
+grep OG0008014 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0009477
+grep OG0009477 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0010010
+grep OG0010010 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0010313
+grep OG0010313 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0010744
+grep OG0010744 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0010794
+grep OG0010794 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0011344
+grep OG0011344 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0011962
+grep OG0011962 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0012246
+grep OG0012246 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0012774
+grep OG0012774 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0013153
+grep OG0013153 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown
+
+# 3 OG0013243
+grep OG0013243 N0.tsv
+grep Oxyria_NCBI_Chr300002214 Total_interproscan_output_edited3.tsv
+# Unknown

@@ -284,17 +284,17 @@ END {
 ' all_genes_guidance_nonArctic.tsv
 
 more OG_single_copy_species_counts_sorted_guidance_nonArctic.tsv
-OG      Num_species_with_sig_gene       Species
-OG0003385_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
-OG0004280_guidance_unique_nonArctic.nxh.ABSREL.json     1       Arabis
-OG0005239_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
-OG0010327_guidance_unique_nonArctic.nxh.ABSREL.json     1       LOC
-OG0014878_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
-OG0015142_guidance_unique_nonArctic.nxh.ABSREL.json     1       Arabis
-OG0015699_guidance_unique_nonArctic.nxh.ABSREL.json     1       LOC
-OG0016698_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
-OG0016885_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
-OG0017941_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG      Num_species_with_sig_gene       Species
+# OG0003385_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG0004280_guidance_unique_nonArctic.nxh.ABSREL.json     1       Arabis
+# OG0005239_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG0010327_guidance_unique_nonArctic.nxh.ABSREL.json     1       LOC
+# OG0014878_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG0015142_guidance_unique_nonArctic.nxh.ABSREL.json     1       Arabis
+# OG0015699_guidance_unique_nonArctic.nxh.ABSREL.json     1       LOC
+# OG0016698_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG0016885_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
+# OG0017941_guidance_unique_nonArctic.nxh.ABSREL.json     1       Rhuem
 
 
 #---------------------------------
@@ -676,6 +676,7 @@ more OG_single_copy_species_counts_sorted_guidance_nonArctic.tsv
 #-----------------
 # How much overlap?
 
+# non-Arctic 
 awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
  OG_paralogs_species_counts_sorted_guidance_nonArctic.tsv
 # 1 2926
@@ -691,6 +692,7 @@ awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
 # 4 87
 
 #------------------
+# Arctic 
 awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
  OG_paralogs_species_counts_sorted_guidance.tsv
 
@@ -778,6 +780,148 @@ comm -12 nonArctic.og arctic4.og > overlap_OGs4.txt
 
 wc -l overlap_OGs4.txt
 # 164 overlap_OGs4.txt
+
+# 164 of 214 overlap with at least one nonArctic 
+# ~60 are Arctic specific
+
+#################################
+# Random permutation and check 
+
+# narval1
+tmux new-session -s total 
+tmux attach-session -t total
+
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+module load StdEnv/2023
+module load r/4.4.0
+
+R
+
+# load files
+arc_file <- "OG_paralogs_species_counts_sorted_guidance.tsv"
+nonarc_file <- "OG_paralogs_species_counts_sorted_guidance_nonArctic.tsv"
+
+ARCTIC <- c("Coch", "Dryas", "Oxyria", "Draba")
+NON_ARCTIC <- c("Alyrata", "Prunus", "Arabis", "Rhuem")  # not used
+
+load_sets <- function(path) {
+  tab <- read.delim(path, header = TRUE, sep = "\t", stringsAsFactors = FALSE, check.names = FALSE)
+  # Expect at least: column 1 = OG, column 3 = species_list
+  og2set <- list()
+  for (i in seq_len(nrow(tab))) {
+    og <- tab[[1]][i]
+    species_list <- tab[[3]][i]
+
+    sp <- unlist(strsplit(species_list, split = ",", fixed = TRUE), use.names = FALSE)
+    sp <- trimws(sp)
+    sp <- sp[nzchar(sp)]
+
+    og2set[[og]] <- unique(sp)
+  }
+  og2set
+}
+
+arc <- load_sets(arc_file)
+nonarc <- load_sets(nonarc_file)
+
+all_ogs <- union(names(arc), names(nonarc))
+
+# Build a single "sig species set" per OG across all species by union
+og2sig <- list()
+for (og in all_ogs) {
+  s <- character(0)
+  if (og %in% names(arc)) s <- union(s, arc[[og]])
+  if (og %in% names(nonarc)) s <- union(s, nonarc[[og]])
+  og2sig[[og]] <- s
+}
+
+# Universe of species present in any OG sig set
+species_universe <- sort(unique(unlist(og2sig, use.names = FALSE)))
+if (length(species_universe) < 4) {
+  stop(paste0("Species universe too small: ", length(species_universe)))
+}
+
+# Count OGs whose sig set contains all chosen4 species
+count_contains <- function(chosen4) {
+  chosen4 <- unique(chosen4)
+  sum(vapply(all_ogs, function(og) {
+    all(chosen4 %in% og2sig[[og]])
+  }, logical(1)))
+}
+
+S_obs <- count_contains(ARCTIC)
+cat("Observed: # OGs with ABSREL sig in ALL 4 Arctic species =", S_obs, "\n")
+
+# Observed: # OGs with ABSREL sig in ALL 4 Arctic species = 214
+
+
+# Permutation: randomly choose 4 species out of the universe
+N <- 5000
+ge <- 0
+species_univ <- species_universe
+
+for (iter in seq_len(N)) {
+  chosen4 <- sample(species_univ, 4, replace = FALSE)
+  S_perm <- count_contains(chosen4)
+  if (S_perm >= S_obs) ge <- ge + 1
+}
+
+pval <- (ge + 1) / (N + 1)
+cat("Permutation test: p-value =", pval, "(N =", N, ")\n")
+
+# Permutation test: p-value = 0.014997 (N = 5000 )
+
+# When we randomly sort species into Arctic or not 
+# and check the overlap - only 1.5% of the time would 
+# we get more than 214 orthogroups in all four
+
+
+
+#---------------------------------
+# Optional: "completely unique to Arctic" = sig set equals exactly the 4 Arctic species
+count_exact <- function(chosen4) {
+  chosen4 <- sort(unique(chosen4))
+  sum(vapply(all_ogs, function(og) {
+    sort(unique(og2sig[[og]])) -> g
+    length(g) == length(chosen4) && all(g == chosen4)
+  }, logical(1)))
+}
+
+S_unique_obs <- count_exact(ARCTIC)
+cat("Observed: # OGs unique to Arctic (sig set exactly = 4 Arctic species) =",
+    S_unique_obs, "\n")
+
+# Observed: # OGs unique to Arctic (sig set exactly = 4 Arctic species) 
+#= 214
+# only cares whether an OG’s sig-species set includes all 4 chosen species
+# —it does not require the OG to include only those 4.
+
+
+#--------------------------
+# p-value for getting 214 OGs overlapping across all four and 
+# only those 4 spp
+
+# Observed
+S_unique_obs <- count_exact(ARCTIC)
+
+# Permutation
+N <- 5000
+ge <- 0
+species_univ <- species_universe
+
+for (iter in seq_len(N)) {
+  chosen4 <- sample(species_univ, 4, replace = FALSE)
+  S_perm <- count_exact(chosen4)
+  if (S_perm >= S_unique_obs) ge <- ge + 1
+}
+
+pval_unique <- (ge + 1) / (N + 1)
+cat("Permutation test (exact 4-species match): p-value =",
+    pval_unique, "(N =", N, ")\n")
+
+# Permutation test (exact 4-species match): 
+# p-value = 0.0129974 (N = 5000 )
 
 
 ##########################

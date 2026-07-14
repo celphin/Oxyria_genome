@@ -62,7 +62,7 @@ cd /home/celphin/scratch/Arctic_comparative_genomes/
 ############################
 # plotting
 
-# Narval3
+# Narval1
 tmux new-session -s gene_plots
 tmux attach-session -t gene_plots
 
@@ -665,7 +665,6 @@ plot_dup_total_species(
 )
 
 
-
 #----------------------------
 # Positively selected genes
 #----------------------------
@@ -690,7 +689,6 @@ count_selected_genes_1Mb <- function(gff_tbl, gene_names, dataset_name,
 
   gene_keep <- gff_genes %>%
     dplyr::mutate(
-      # Extract the value right after ID= up to the next ;
       gene_id = sub(".*ID=([^;]+).*", "\\1", V9),
       gene_id_up = toupper(gene_id)
     ) %>%
@@ -707,18 +705,43 @@ count_selected_genes_1Mb <- function(gff_tbl, gene_names, dataset_name,
   gene_keep <- gene_keep %>%
     dplyr::filter(V1 %in% long_scaffolds)
 
-  binned <- gene_keep %>%
+  # ---- total gene counts per bin (for the same long scaffolds) ----
+  total_keep <- gff_genes %>%
+    dplyr::filter(V1 %in% long_scaffolds) %>%
     dplyr::mutate(
       pos = as.numeric(V4),
       bin_start = floor(pos / binwidth) * binwidth
     ) %>%
     dplyr::group_by(V1, bin_start) %>%
-    dplyr::summarise(count = dplyr::n(), .groups="drop") %>%
-    dplyr::rename(chr = V1) %>%
+    dplyr::summarise(total_count = dplyr::n(), .groups="drop") %>%
+    dplyr::rename(chr = V1)
+
+  # ---- selected gene counts per bin ----
+  selected_binned <- gene_keep %>%
+    dplyr::mutate(
+      pos = as.numeric(V4),
+      bin_start = floor(pos / binwidth) * binwidth
+    ) %>%
+    dplyr::group_by(V1, bin_start) %>%
+    dplyr::summarise(selected_count = dplyr::n(), .groups="drop") %>%
+    dplyr::rename(chr = V1)
+
+  binned <- selected_binned %>%
+    dplyr::full_join(total_keep, by = c("chr", "bin_start")) %>%
+    dplyr::mutate(
+      selected_count = dplyr::coalesce(selected_count, 0L),
+      total_count = dplyr::coalesce(total_count, 0L),
+      ratio = dplyr::if_else(total_count > 0, selected_count / total_count, NA_real_)
+    ) %>%
     dplyr::group_by(chr) %>%
     dplyr::mutate(
-      norm = if (max(count) == min(count)) 0
-      else (count - min(count)) / (max(count) - min(count))
+      # keep your original selected-count normalization
+      norm = if (max(selected_count) == min(selected_count)) 0
+             else (selected_count - min(selected_count)) / (max(selected_count) - min(selected_count)),
+
+      # normalize the ratio to 0–1 for plotting (optional but matches your y scale)
+      ratio_norm = if (all(is.na(ratio)) || max(ratio, na.rm=TRUE) == min(ratio, na.rm=TRUE)) 0
+                    else (ratio - min(ratio, na.rm=TRUE)) / (max(ratio, na.rm=TRUE) - min(ratio, na.rm=TRUE))
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(dataset = dataset_name)
@@ -756,17 +779,31 @@ Oxy_sel_bins <- count_selected_genes_1Mb(
 
 #---- plotting ----
 plot_sel_species <- function(dat, out_png, out_pdf) {
-  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm)) +
+  dat_long <- tidyr::pivot_longer(
+    dat,
+    cols = c(norm, ratio_norm),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+    dplyr::mutate(metric = dplyr::recode(
+      metric,
+      norm = "Selected count (min–max)",
+      ratio_norm = "Selected fraction (min–max)"
+    ))
+
+  p <- ggplot(dat_long, aes(x = bin_start/1e6, y = value, color = metric)) +
     geom_line(linewidth = 0.7) +
-    facet_wrap(~ chr, ncol = 1) +
+    facet_wrap(~ chr, scales = "fixed", ncol = 1) +
     xlab("Genomic position (Mb, 1 Mb bins)") +
-    ylab("Normalized count of positively selected genes (0–1)") +
+    ylab("Normalized value (0–1)") +
     theme_classic() +
-    ggtitle(unique(dat$dataset))
+    ggtitle(unique(dat$dataset)) +
+    theme(legend.position = "bottom")
 
   ggsave(out_png, p, width = 7, height = 12, dpi = 300)
   ggsave(out_pdf, p, width = 7, height = 12)
 }
+
 
 plot_sel_species(
   Dry_sel_bins,
@@ -786,59 +823,116 @@ plot_sel_species(
 # Core and accessory genes
 #--------------------------
 
-count_bed_1Mb <- function(bed_tbl, dataset_name,
-                           binwidth = 1e6,
-                           min_len = 5e6,
-                           use = c("midpoint","start","end")) {
-
+count_bed_1Mb_with_fraction_from_gff <- function(bed_tbl,
+                                                 gff_tbl_all_genes,
+                                                 dataset_name,
+                                                 binwidth = 1e6,
+                                                 min_len = 5e6,
+                                                 use = c("midpoint","start","end")) {
   use <- match.arg(use)
+
   b <- as.data.frame(bed_tbl)
+  gff <- as.data.frame(gff_tbl_all_genes)
 
-  start <- as.numeric(b$V2)
-  end   <- as.numeric(b$V3)
-  chr   <- as.character(b$V1)
+  gff_genes <- gff %>%
+    dplyr::filter(V3 == "gene") %>%
+    dplyr::mutate(
+      chr = as.character(V1),
+      start = as.numeric(V4),
+      end = as.numeric(V5)
+    )
 
-  # compute per-chr length from BED coordinates
-  chr_len <- data.frame(chr = chr, start = start, end = end) %>%
+  # BED coords
+  b_start <- as.numeric(b$V2)
+  b_end   <- as.numeric(b$V3)
+  b_chr   <- as.character(b$V1)
+
+  # keep chromosomes based on BED (same logic as your current BED function)
+  chr_len <- data.frame(chr = b_chr, start = b_start, end = b_end) %>%
     dplyr::group_by(chr) %>%
     dplyr::summarise(length = max(end), .groups="drop")
 
   keep_chr <- chr_len %>% dplyr::filter(length >= min_len) %>% dplyr::pull(chr)
 
-  keep <- chr %in% keep_chr
-  start <- start[keep]
-  end   <- end[keep]
-  chr   <- chr[keep]
+  keep_cat <- b_chr %in% keep_chr
+  b_start <- b_start[keep_cat]; b_end <- b_end[keep_cat]; b_chr <- b_chr[keep_cat]
 
-  pos <- switch(use,
-    midpoint = (start + end) / 2,
-    start    = start,
-    end      = end
+  # denominator gene coords restricted to same long scaffolds
+  gff_genes <- gff_genes %>% dplyr::filter(chr %in% keep_chr)
+
+  # positions
+  cat_pos <- switch(use,
+    midpoint = (b_start + b_end) / 2,
+    start    = b_start,
+    end      = b_end
   )
 
-  tibble(chr = chr, pos = pos) %>%
+  all_pos <- switch(use,
+    midpoint = (gff_genes$start + gff_genes$end) / 2,
+    start    = gff_genes$start,
+    end      = gff_genes$end
+  )
+
+  # binning
+  cat_df <- tibble(chr = b_chr, pos = cat_pos) %>%
     mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
     group_by(chr, bin_start) %>%
-    summarise(count = dplyr::n(), .groups="drop") %>%
-    group_by(chr) %>%
-    mutate(norm = if (max(count) == min(count)) 0
-                   else (count - min(count)) / (max(count) - min(count))) %>%
-    ungroup() %>%
-    mutate(dataset = dataset_name)
+    summarise(selected_count = dplyr::n(), .groups="drop")
+
+  all_df <- tibble(chr = gff_genes$chr, pos = all_pos) %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    group_by(chr, bin_start) %>%
+    summarise(total_count = dplyr::n(), .groups="drop")
+
+  out <- cat_df %>%
+    dplyr::full_join(all_df, by = c("chr","bin_start")) %>%
+    dplyr::mutate(
+      selected_count = dplyr::coalesce(selected_count, 0L),
+      total_count = dplyr::coalesce(total_count, 0L),
+      ratio = dplyr::if_else(total_count > 0, selected_count / total_count, NA_real_)
+    ) %>%
+    dplyr::group_by(chr) %>%
+    dplyr::mutate(
+      norm = if (max(selected_count) == min(selected_count)) 0
+              else (selected_count - min(selected_count)) / (max(selected_count) - min(selected_count)),
+
+      ratio_norm = if (all(is.na(ratio)) || max(ratio, na.rm=TRUE) == min(ratio, na.rm=TRUE)) 0
+                    else (ratio - min(ratio, na.rm=TRUE)) / (max(ratio, na.rm=TRUE) - min(ratio, na.rm=TRUE))
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(dataset = dataset_name)
+
+  out
 }
 
-plot_sel_species <- function(dat, out_png, out_pdf) {
-  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm)) +
+
+plot_bed_species <- function(dat, out_png, out_pdf) {
+  dat_long <- tidyr::pivot_longer(
+    dat,
+    cols = c(norm, ratio_norm),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+    dplyr::mutate(metric = dplyr::recode(
+      metric,
+      norm = "Category count (min–max)",
+      ratio_norm = "Category fraction (min–max)"
+    ))
+
+  p <- ggplot(dat_long, aes(x = bin_start/1e6, y = value, color = metric)) +
     geom_line(linewidth = 0.7) +
-    facet_wrap(~ chr, ncol = 1) +
+    facet_wrap(~ chr, scales = "fixed", ncol = 1) +
     xlab("Genomic position (Mb, 1 Mb bins)") +
-    ylab("Normalized count (0–1)") +
+    ylab("Normalized value (0–1)") +
     theme_classic() +
-    ggtitle(unique(dat$dataset))
+    ggtitle(unique(dat$dataset)) +
+    theme(legend.position = "bottom")
 
   ggsave(out_png, p, width = 7, height = 12, dpi = 300)
   ggsave(out_pdf, p, width = 7, height = 12)
 }
+
+
 
 #---- read your BEDs ----
 Dryas_core <- read.table("./Core_accessory/core_by_species/Dryas_octopetala_core.bed",sep="\t",header=F)
@@ -851,50 +945,75 @@ Dryas_singleton <- read.table("./Core_accessory/singleton_by_species/Dryas_octop
 Oxyria_singleton <- read.table("./Core_accessory/singleton_by_species/Oxyria_digyna_H1_singleton.bed",sep="\t",header=F)
 
 #---- bin each category (midpoint) ----
-Dry_core_bins <- count_bed_1Mb(Dryas_core, "Dryas_octopetala_core", binwidth=1e6, min_len = 5e6,use="midpoint")
-Oxy_core_bins <- count_bed_1Mb(Oxyria_core, "Oxyria_digyna_H1_core", binwidth=1e6,min_len = 5e6, use="midpoint")
-
-Dry_acc_bins <- count_bed_1Mb(Dryas_accessory, "Dryas_octopetala_accessory", binwidth=1e6,min_len = 5e6, use="midpoint")
-Oxy_acc_bins <- count_bed_1Mb(Oxyria_accessory, "Oxyria_digyna_H1_accessory", binwidth=1e6, min_len = 5e6,use="midpoint")
-
-Dry_single_bins <- count_bed_1Mb(Dryas_singleton, "Dryas_octopetala_singleton", binwidth=1e6, min_len = 5e6,use="midpoint")
-Oxy_single_bins <- count_bed_1Mb(Oxyria_singleton, "Oxyria_digyna_H1_singleton", binwidth=1e6,min_len = 5e6, use="midpoint")
-
-#---- plot ----
-plot_sel_species(Dry_core_bins,
-  "./plots/Dryas_octopetala_core_count_1Mb_norm.png",
-  "./plots/Dryas_octopetala_core_count_1Mb_norm.pdf"
+# Core
+Dry_core_bins <- count_bed_1Mb_with_fraction_from_gff(
+  Dryas_core, Dry_genes0, "Dryas_octopetala_core",
+  binwidth = 1e6, min_len = 5e6, use = "midpoint"
 )
 
-plot_sel_species(Oxy_core_bins,
-  "./plots/Oxyria_digyna_H1_core_count_1Mb_norm.png",
-  "./plots/Oxyria_digyna_H1_core_count_1Mb_norm.pdf"
+Oxy_core_bins <- count_bed_1Mb_with_fraction_from_gff(
+  Oxyria_core, Oxy_genes0, "Oxyria_digyna_H1_core",
+  binwidth = 1e6, min_len = 5e6, use = "midpoint"
 )
 
-plot_sel_species(Dry_acc_bins,
-  "./plots/Dryas_octopetala_accessory_count_1Mb_norm.png",
-  "./plots/Dryas_octopetala_accessory_count_1Mb_norm.pdf"
+# Accessory
+Dry_acc_bins <- count_bed_1Mb_with_fraction_from_gff(
+  Dryas_accessory, Dry_genes0, "Dryas_octopetala_accessory",
+  binwidth = 1e6, min_len = 5e6, use = "midpoint"
 )
 
-plot_sel_species(Oxy_acc_bins,
-  "./plots/Oxyria_digyna_H1_accessory_count_1Mb_norm.png",
-  "./plots/Oxyria_digyna_H1_accessory_count_1Mb_norm.pdf"
+Oxy_acc_bins <- count_bed_1Mb_with_fraction_from_gff(
+  Oxyria_accessory, Oxy_genes0, "Oxyria_digyna_H1_accessory",
+  binwidth = 1e6, min_len = 5e6, use = "midpoint"
 )
 
-plot_sel_species(Dry_single_bins,
-  "./plots/Dryas_octopetala_singleton_count_1Mb_norm.png",
-  "./plots/Dryas_octopetala_singleton_count_1Mb_norm.pdf"
+# Singleton
+Dry_single_bins <- count_bed_1Mb_with_fraction_from_gff(
+  Dryas_singleton, Dry_genes0, "Dryas_octopetala_singleton",
+  binwidth = 1e6, min_len = 5e6, use = "midpoint"
 )
 
-plot_sel_species(Oxy_single_bins,
-  "./plots/Oxyria_digyna_H1_singleton_count_1Mb_norm.png",
-  "./plots/Oxyria_digyna_H1_singleton_count_1Mb_norm.pdf"
+Oxy_single_bins <- count_bed_1Mb_with_fraction_from_gff(
+  Oxyria_singleton, Oxy_genes0, "Oxyria_digyna_H1_singleton",
+  binwidth = 1e6, min_len = 5e6, use = "midpoint"
 )
+
+# Plot
+plot_bed_species(Dry_core_bins,
+  "./plots/Dryas_octopetala_core_count_and_fraction_1Mb.png",
+  "./plots/Dryas_octopetala_core_count_and_fraction_1Mb.pdf"
+)
+
+plot_bed_species(Oxy_core_bins,
+  "./plots/Oxyria_digyna_H1_core_count_and_fraction_1Mb.png",
+  "./plots/Oxyria_digyna_H1_core_count_and_fraction_1Mb.pdf"
+)
+
+plot_bed_species(Dry_acc_bins,
+  "./plots/Dryas_octopetala_accessory_count_and_fraction_1Mb.png",
+  "./plots/Dryas_octopetala_accessory_count_and_fraction_1Mb.pdf"
+)
+
+plot_bed_species(Oxy_acc_bins,
+  "./plots/Oxyria_digyna_H1_accessory_count_and_fraction_1Mb.png",
+  "./plots/Oxyria_digyna_H1_accessory_count_and_fraction_1Mb.pdf"
+)
+
+plot_bed_species(Dry_single_bins,
+  "./plots/Dryas_octopetala_singleton_count_and_fraction_1Mb.png",
+  "./plots/Dryas_octopetala_singleton_count_and_fraction_1Mb.pdf"
+)
+
+plot_bed_species(Oxy_single_bins,
+  "./plots/Oxyria_digyna_H1_singleton_count_and_fraction_1Mb.png",
+  "./plots/Oxyria_digyna_H1_singleton_count_and_fraction_1Mb.pdf"
+)
+
 
 
 #----------------------------
-# Microsynteny genes
-#--------------------------
+# Microsynteny genes (count + fraction)
+#----------------------------
 
 #---- parse GFF: gene id -> chr + start/end (case-insensitive) ----
 gff_gene_coords <- function(gff_tbl) {
@@ -913,93 +1032,160 @@ gff_gene_coords <- function(gff_tbl) {
 Dry_gff <- gff_gene_coords(Dry_genes0)
 Oxy_gff <- gff_gene_coords(Oxy_genes0)
 
-#---- helper: bin positions (midpoint), normalize per chr, filter chr length ----
-count_positions_1Mb <- function(chr, pos, dataset_name, binwidth=1e6, min_len=5e6) {
-  chr <- as.character(chr)
-  pos <- as.numeric(pos)
+#---- bin selected vs total per chr, and compute two metrics ----
+count_microsyn_1Mb_with_fraction <- function(sel_chr, sel_pos,
+                                              all_chr, all_pos,
+                                              dataset_name,
+                                              binwidth = 1e6,
+                                              min_len = 5e6) {
 
-  chr_len <- tibble(chr = chr, pos = pos) %>%
-    group_by(chr) %>%
-    summarise(length = max(pos, na.rm = TRUE), .groups="drop")
+  sel_chr <- as.character(sel_chr); sel_pos <- as.numeric(sel_pos)
+  all_chr <- as.character(all_chr); all_pos <- as.numeric(all_pos)
 
-  keep_chr <- chr_len %>% filter(length >= min_len) %>% pull(chr)
+  chr_len <- tibble(chr = all_chr, pos = all_pos) %>%
+    dplyr::group_by(chr) %>%
+    dplyr::summarise(length = max(pos, na.rm = TRUE), .groups = "drop")
 
-  df <- tibble(chr = chr, pos = pos) %>%
-    filter(!is.na(pos), chr %in% keep_chr)
+  keep_chr <- chr_len %>% dplyr::filter(length >= min_len) %>% dplyr::pull(chr)
 
-  df %>%
+  sel_keep <- sel_chr %in% keep_chr
+  sel_chr <- sel_chr[sel_keep]
+  sel_pos <- sel_pos[sel_keep]
+
+  all_keep <- all_chr %in% keep_chr
+  all_chr <- all_chr[all_keep]
+  all_pos <- all_pos[all_keep]
+
+  cat_df <- tibble(chr = sel_chr, pos = sel_pos) %>%
+    dplyr::filter(!is.na(pos)) %>%
     mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
-    group_by(chr, bin_start) %>%
-    summarise(count = dplyr::n(), .groups="drop") %>%
-    group_by(chr) %>%
-    mutate(norm = if (max(count) == min(count)) 0
-                   else (count - min(count)) / (max(count) - min(count))) %>%
-    ungroup() %>%
-    mutate(dataset = dataset_name)
+    dplyr::group_by(chr, bin_start) %>%
+    dplyr::summarise(selected_count = dplyr::n(), .groups = "drop")
+
+  all_df <- tibble(chr = all_chr, pos = all_pos) %>%
+    dplyr::filter(!is.na(pos)) %>%
+    mutate(bin_start = floor(pos / binwidth) * binwidth) %>%
+    dplyr::group_by(chr, bin_start) %>%
+    dplyr::summarise(total_count = dplyr::n(), .groups = "drop")
+
+  out <- cat_df %>%
+    full_join(all_df, by = c("chr", "bin_start")) %>%
+    mutate(
+      selected_count = dplyr::coalesce(selected_count, 0L),
+      total_count = dplyr::coalesce(total_count, 0L),
+      ratio = dplyr::if_else(total_count > 0, selected_count / total_count, NA_real_)
+    ) %>%
+    dplyr::group_by(chr) %>%
+    dplyr::mutate(
+      norm = if (max(selected_count, na.rm = TRUE) == min(selected_count, na.rm = TRUE)) 0
+              else (selected_count - min(selected_count, na.rm = TRUE)) /
+                   (max(selected_count, na.rm = TRUE) - min(selected_count, na.rm = TRUE)),
+
+      ratio_norm = if (all(is.na(ratio)) ||
+                         max(ratio, na.rm = TRUE) == min(ratio, na.rm = TRUE)) 0
+                    else (ratio - min(ratio, na.rm = TRUE)) /
+                         (max(ratio, na.rm = TRUE) - min(ratio, na.rm = TRUE))
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(dataset = dataset_name)
+
+  out
 }
 
-plot_sel_species <- function(dat, out_png, out_pdf) {
-  p <- ggplot(dat, aes(x = bin_start/1e6, y = norm)) +
-    geom_line(linewidth = 0.7) +
-    facet_wrap(~ chr, ncol = 1) +
-    xlab("Genomic position (Mb, 1 Mb bins)") +
-    ylab("Normalized count (0–1)") +
-    theme_classic() +
-    ggtitle(unique(dat$dataset))
 
-  ggsave(out_png, p, width=7, height=12, dpi=300)
-  ggsave(out_pdf, p, width=7, height=12)
+#---- plotting: overlay both metrics within each chromosome ----
+plot_microsyn_species <- function(dat, out_png, out_pdf) {
+  dat_long <- tidyr::pivot_longer(
+    dat,
+    cols = c(norm, ratio_norm),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+    dplyr::mutate(metric = dplyr::recode(
+      metric,
+      norm = "Microsynteny count (min–max)",
+      ratio_norm = "Microsynteny fraction (min–max)"
+    ))
+
+  p <- ggplot(dat_long, aes(x = bin_start/1e6, y = value, color = metric)) +
+    geom_line(linewidth = 0.7) +
+    facet_wrap(~ chr, scales = "fixed", ncol = 1) +
+    xlab("Genomic position (Mb, 1 Mb bins)") +
+    ylab("Normalized value (0–1)") +
+    theme_classic() +
+    ggtitle(dat$dataset[1]) +
+    theme(legend.position = "bottom")
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
 }
 
 #----------------------------
-# microsynteny table
+# Microsynteny table -> map to GFF -> positions
+#----------------------------
 
-# Example: use the gene id columns shown in your snippet
+# Example columns from your snippet
 Dry_gene_col <- "Dryas.octopetala.Gene.1"
 Oxy_gene_col <- "Oxyria.digyna.Gene.1"
 
-# join microsynteny gene IDs to GFF coords (case-insensitive)
+# microsynteny gene midpoints
 Dry_mic_pos <- microsyn %>%
-  transmute(gene_id = .data[[Dry_gene_col]],
-            gene_id_up = toupper(gene_id)) %>%
-  inner_join(Dry_gff %>% select(gene_id_up, chr, start, end),
-              by="gene_id_up") %>%
-  mutate(mid = (start + end)/2) %>%
-  select(chr, mid)
+  dplyr::transmute(gene_id = .data[[Dry_gene_col]],
+                   gene_id_up = toupper(gene_id)) %>%
+  dplyr::inner_join(Dry_gff %>% dplyr::select(gene_id_up, chr, start, end),
+                    by = "gene_id_up") %>%
+  dplyr::mutate(mid = (start + end)/2) %>%
+  dplyr::select(chr, mid)
 
 Oxy_mic_pos <- microsyn %>%
-  transmute(gene_id = .data[[Oxy_gene_col]],
-            gene_id_up = toupper(gene_id)) %>%
-  inner_join(Oxy_gff %>% select(gene_id_up, chr, start, end),
-              by="gene_id_up") %>%
-  mutate(mid = (start + end)/2) %>%
-  select(chr, mid)
+  dplyr::transmute(gene_id = .data[[Oxy_gene_col]],
+                   gene_id_up = toupper(gene_id)) %>%
+  dplyr::inner_join(Oxy_gff %>% dplyr::select(gene_id_up, chr, start, end),
+                    by = "gene_id_up") %>%
+  dplyr::mutate(mid = (start + end)/2) %>%
+  dplyr::select(chr, mid)
 
-Dry_mic_bins <- count_positions_1Mb(
-  chr = Dry_mic_pos$chr,
-  pos = Dry_mic_pos$mid,
+# all gene midpoints (denominator)
+Dry_all_pos <- Dry_gff %>%
+  dplyr::mutate(mid = (start + end)/2) %>%
+  dplyr::select(chr, mid)
+
+Oxy_all_pos <- Oxy_gff %>%
+  dplyr::mutate(mid = (start + end)/2) %>%
+  dplyr::select(chr, mid)
+
+# bin + metrics
+Dry_mic_bins <- count_microsyn_1Mb_with_fraction(
+  sel_chr = Dry_mic_pos$chr,
+  sel_pos = Dry_mic_pos$mid,
+  all_chr = Dry_all_pos$chr,
+  all_pos = Dry_all_pos$mid,
   dataset_name = "Dryas_octopetala_microsynteny (Gene.1)",
   binwidth = 1e6,
   min_len = 5e6
 )
 
-Oxy_mic_bins <- count_positions_1Mb(
-  chr = Oxy_mic_pos$chr,
-  pos = Oxy_mic_pos$mid,
+Oxy_mic_bins <- count_microsyn_1Mb_with_fraction(
+  sel_chr = Oxy_mic_pos$chr,
+  sel_pos = Oxy_mic_pos$mid,
+  all_chr = Oxy_all_pos$chr,
+  all_pos = Oxy_all_pos$mid,
   dataset_name = "Oxyria_digyna_microsynteny (Gene.1)",
   binwidth = 1e6,
   min_len = 5e6
 )
 
 # plot
-plot_sel_species(Dry_mic_bins,
-  "./plots/Dryas_octopetala_microsynteny_gene1_count_1Mb_norm.png",
-  "./plots/Dryas_octopetala_microsynteny_gene1_count_1Mb_norm.pdf"
+plot_microsyn_species(
+  Dry_mic_bins,
+  "./plots/Dryas_octopetala_microsynteny_gene1_count_and_fraction_1Mb.png",
+  "./plots/Dryas_octopetala_microsynteny_gene1_count_and_fraction_1Mb.pdf"
 )
 
-plot_sel_species(Oxy_mic_bins,
-  "./plots/Oxyria_digyna_microsynteny_gene1_count_1Mb_norm.png",
-  "./plots/Oxyria_digyna_microsynteny_gene1_count_1Mb_norm.pdf"
+plot_microsyn_species(
+  Oxy_mic_bins,
+  "./plots/Oxyria_digyna_microsynteny_gene1_count_and_fraction_1Mb.png",
+  "./plots/Oxyria_digyna_microsynteny_gene1_count_and_fraction_1Mb.pdf"
 )
 
 #----------------------------
@@ -1034,6 +1220,7 @@ dup_tracks <- dup_all %>%
   transmute(
     chr,
     bin_start,
+    count,
     norm,
     track = track,               # WGD/Tandem/...
     species = dataset
@@ -1041,8 +1228,8 @@ dup_tracks <- dup_all %>%
 
 # Total duplications -> you need to create a combined df in the same schema
 dup_total_tracks <- bind_rows(
-  dup_total_oxy %>% transmute(chr, bin_start, norm, track = "Total duplications", species = dataset),
-  dup_total_dry %>% transmute(chr, bin_start, norm, track = "Total duplications", species = dataset)
+  dup_total_oxy %>% transmute(chr, bin_start, count, norm, track = "Total duplications", species = dataset),
+  dup_total_dry %>% transmute(chr, bin_start, count, norm, track = "Total duplications", species = dataset)
 )
 
 # If you later want repeats-by-type, you can bind them too once you have them as:
@@ -1139,6 +1326,7 @@ make_repeats_bins_subset <- function(Spp_TE_repeats0, species_name,
     transmute(
       chr,
       bin_start,
+      total_rep_bp,
       norm,
       track = paste0("Repeat: ", repeat_type),
       species = species_name
@@ -1189,7 +1377,7 @@ count_selected_genes_1Mb_to_tracks <- function(gff_tbl, gene_names, dataset_name
     mutate(norm = if (max(count) == min(count)) 0
                    else (count - min(count)) / (max(count) - min(count))) %>%
     ungroup() %>%
-    transmute(chr, bin_start, norm,
+    transmute(chr, bin_start, count, norm, 
               track = "Positively selected genes",
               species = dataset_name)
 
@@ -1249,7 +1437,7 @@ count_bed_1Mb_to_track <- function(bed_tbl, dataset_name,
     mutate(norm = if (max(count) == min(count)) 0
                    else (count - min(count)) / (max(count) - min(count))) %>%
     ungroup() %>%
-    transmute(chr, bin_start, norm,
+    transmute(chr, bin_start, count, norm,
               track = track_name,
               species = dataset_name)
 }
@@ -1308,7 +1496,7 @@ count_positions_1Mb_to_track <- function(chr, pos, dataset_name, track_name,
     mutate(norm = if (max(count) == min(count)) 0
                    else (count - min(count)) / (max(count) - min(count))) %>%
     ungroup() %>%
-    transmute(chr, bin_start, norm,
+    transmute(chr, bin_start, count, norm,
               track = track_name,
               species = dataset_name)
 }
@@ -1358,9 +1546,6 @@ all_tracks_extended_raw <- bind_rows(
   microsynt_tracks
 )
 
-all_tracks_extended <- renorm_per_track_chr01(all_tracks_extended_raw) %>%
-  rename(norm01 = norm01)
-
  unique(all_tracks_extended_raw$chr)
  # [1] "DoctH0-1"         "DoctH0-2"         "DoctH0-3"         "DoctH0-4"
  # [5] "DoctH0-5"         "DoctH0-6"         "DoctH0-7"         "DoctH0-8"
@@ -1369,6 +1554,24 @@ all_tracks_extended <- renorm_per_track_chr01(all_tracks_extended_raw) %>%
 # [17] "Oxy-1-8814624"    "Oxy-2-8078772"    "Oxy-3-7717500"    "Oxy-4-7603626"
 # [21] "Oxy-5-7384279"    "Oxy-6-7328924"    "Oxy-7-7013624"
 
+
+all_tracks_extended_raw <- all_tracks_extended_raw %>%
+  mutate(
+    chr = case_when(
+      grepl("^Oxy\\-\\d+\\-\\d+$", chr) ~ sub("^Oxy\\-(\\d+)\\-\\d+$", "Oxy-\\1", chr),
+      grepl("^Oxyrt\\-\\d+\\-\\d+$", chr) ~ sub("^Oxyrt\\-(\\d+)\\-\\d+$", "Oxy-\\1", chr),
+      TRUE ~ chr
+    )
+  )
+
+unique(all_tracks_extended_raw$chr)
+ # [1] "DoctH0-1" "DoctH0-2" "DoctH0-3" "DoctH0-4" "DoctH0-5" "DoctH0-6"
+ # [7] "DoctH0-7" "DoctH0-8" "DoctH0-9" "Oxy-1"    "Oxy-2"    "Oxy-3"
+# [13] "Oxy-4"    "Oxy-5"    "Oxy-6"    "Oxy-7"
+
+
+all_tracks_extended <- renorm_per_track_chr01(all_tracks_extended_raw) %>%
+  rename(norm01 = norm01)
 
 #-----------------------------
 # 6) Separate plot per species
@@ -1402,11 +1605,131 @@ plot_species_tracks(
   "./plots/Oxyria_combined_plus_repeats_sel_core_microsynt_norm01.pdf"
 )
 
+###################################
+# Add ratio of genes out of total genes for each category
+
+gene_class_tracks <- c(
+  "Core genes", "Accessory genes",
+  "Positively selected genes", "Microsynteny (Gene.1)"
+)
+
+wide <- all_tracks_extended_raw %>%
+  filter(track %in% c("Gene density", gene_class_tracks)) %>%
+  mutate(bin_start = as.numeric(bin_start)) %>%
+  select(species, chr, bin_start, track, count) %>%
+  pivot_wider(names_from = track, values_from = count, values_fill = 0) %>%
+  mutate(total_gene_density = .data[["Gene density"]])
+
+counts_long <- wide %>%
+  pivot_longer(
+    cols = all_of(gene_class_tracks),
+    names_to = "track",
+    values_to = "count"
+  )
+
+ratios_long <- wide %>%
+  mutate(across(
+    all_of(gene_class_tracks),
+    ~ .x / .data[["Gene density"]],
+    .names = "ratio_{.col}"
+  )) %>%
+  pivot_longer(
+    cols = starts_with("ratio_"),
+    names_to = "ratio_name",
+    values_to = "ratio"
+  ) %>%
+  mutate(track = sub("^ratio_", "", ratio_name)) %>%
+  select(-ratio_name)
+
+ratios_bin_chr <- ratios_long %>%
+  left_join(
+    counts_long %>%
+      select(species, chr, bin_start, track, count),
+    by = c("species", "chr", "bin_start", "track")
+  ) %>%
+  select(species, chr, bin_start, track, ratio, count, total_gene_density)
+
+
+plot_species_tracks_ratio <- function(dat, species_name, out_png, out_pdf) {
+  dat <- dat %>% filter(species == species_name)
+
+  p <- ggplot(dat, aes(x = bin_start / 1e6, y = ratio, color = track)) +
+    geom_line(linewidth = 0.6, alpha = 0.95) +
+    facet_wrap(~ chr, ncol = 1, scales = "fixed") +
+    labs(x = "Genomic position (Mb, 1 Mb bins)",
+         y = "Ratio",
+         title = species_name) +
+    theme_classic() +
+    theme(legend.position = "right")
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
+
+plot_species_tracks_ratio(
+  ratios_bin_chr, "Dryas_octopetala_H0",
+  "./plots/Dryas_with_gene_class_ratios.png",
+  "./plots/Dryas_with_gene_class_ratios.pdf"
+)
+
+plot_species_tracks_ratio(
+  ratios_bin_chr, "Oxyria_digyna",
+  "./plots/Oxyria_with_gene_class_ratios.png",
+  "./plots/Oxyria_with_gene_class_ratios.pdf"
+)
+
+
+ratios_bin_chr <- ratios_bin_chr %>%
+  group_by(chr, track) %>%
+  mutate(
+    ratio_plot = (ratio - min(ratio, na.rm = TRUE)) /
+                  (max(ratio, na.rm = TRUE) - min(ratio, na.rm = TRUE))
+  ) %>%
+  ungroup() %>%
+  mutate(
+    ratio_plot = ifelse(is.nan(ratio_plot), 0, ratio_plot)  # handles max==min
+  )
+
+
+plot_species_tracks_rationorm <- function(dat, species_name, out_png, out_pdf) {
+  dat <- dat %>% filter(species == species_name)
+
+  p <- ggplot(dat, aes(x = bin_start / 1e6, y = ratio_plot, color = track)) +
+    geom_line(linewidth = 0.6, alpha = 0.95) +
+    facet_wrap(~ chr, ncol = 1, scales = "fixed") +
+    labs(x = "Genomic position (Mb, 1 Mb bins)",
+         y = "Ratio Normalized 0-1",
+         title = species_name) +
+    theme_classic() +
+    theme(legend.position = "right")
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
+
+plot_species_tracks_rationorm(
+  ratios_bin_chr, "Dryas_octopetala_H0",
+  "./plots/Dryas_with_gene_class_ratiosnorm.png",
+  "./plots/Dryas_with_gene_class_ratiosnorm.pdf"
+)
+
+plot_species_tracks_rationorm(
+  ratios_bin_chr, "Oxyria_digyna",
+  "./plots/Oxyria_with_gene_class_ratiosnorm.png",
+  "./plots/Oxyria_with_gene_class_ratiosnorm.pdf"
+)
+
+
+
+# Join
+all_tracks_with_ratios <- left_join(all_tracks_extended, ratios_bin_chr)
+# Joining with `by = join_by(chr, bin_start, count, track, species)`
+
 
 #-----------------------------
 # Subset to reasonable number of factors
 
-unique(all_tracks_extended$track)
+unique(all_tracks_with_ratios$track)
  # [1] "Gene density"                      "WGD"
  # [3] "Tandem"                            "Proximal"
  # [5] "Transposed"                        "Dispersed"
@@ -1426,7 +1749,7 @@ tracks_keep <- c(
   "Repeat: Copia_LTR_retrotransposon"
 )
 
-all_tracks_subset <- all_tracks_extended %>%
+all_tracks_subset <- all_tracks_with_ratios %>%
   filter(track %in% tracks_keep)
 
 # then plot as before
@@ -1442,58 +1765,512 @@ plot_species_tracks(
   "./plots/Oxyria_subset_tracks_norm01.pdf"
 )
 
-#####################################
-# Look at 2 and 4 Mbp windows
+# then plot with ratios
+plot_species_tracks_ratio(
+  all_tracks_subset, "Dryas_octopetala_H0",
+  "./plots/Dryas_subset_ratio_norm01.png",
+  "./plots/Dryas_subset_ratio_norm01.pdf"
+)
 
-rebin_norm01 <- function(df, window_bp) {
-  df %>%
-    mutate(bin_start = floor(bin_start / window_bp) * window_bp) %>%
-    group_by(chr, dataset, track, species, bin_start) %>%
-    summarise(
-      norm01 = max(norm01, na.rm = TRUE),   # or mean(norm01, na.rm=TRUE)
-      .groups = "drop"
-    )
-}
+plot_species_tracks_ratio(
+  all_tracks_subset, "Oxyria_digyna",
+  "./plots/Oxyria_subset_ratio_norm01.png",
+  "./plots/Oxyria_subset_ratio_norm01.pdf"
+)
 
-all_tracks_2M_from_norm <- rebin_norm01(all_tracks_subset, 2e6)
-all_tracks_4M_from_norm <- rebin_norm01(all_tracks_subset, 4e6)
-all_tracks_6M_from_norm <- rebin_norm01(all_tracks_subset, 6e6)
+
+####################################
+# Add centromere locations in and count 
+oxychr <- c("Oxy-1", "Oxy-2", "Oxy-3", "Oxy-4",  
+ "Oxy-5", "Oxy-6", "Oxy-7")
+oxycent <- c("46e+06", "31e+06", "45e+06", "47e+06",  
+ "45e+06", "30e+06", "31e+06")
+oxychrlength <- c("79e+06", "80e+06", "78e+06", "76e+06",  
+ "73e+06", "72e+06", "87e+06")
+Oxy_cent <- cbind(oxychr, oxycent, oxychrlength)
+# Chr 6: 29Mbp has same repeat!
+
+drychr <- c("DoctH0-1", "DoctH0-2", "DoctH0-3", "DoctH0-4", 
+"DoctH0-5", "DoctH0-6", "DoctH0-7", "DoctH0-8", "DoctH0-9")
+drycent <- c("27e+06", "8.5e+06", "23e+06", "5e+06", 
+"2e+06", "19e+06", "17.5e+06", "17e+06", "2.5e+06")
+drychrlength <- c("34e+06", "33e+06", "28e+06", "27e+06", 
+"23e+06", "22e+06", "22e+06", "21e+06", "20e+06")
+Dry_cent <- cbind(drychr, drycent, drychrlength)
+
+Oxy_cent
+     # oxychr  oxycent  oxychrlength
+# [1,] "Oxy-1" "79e+06" "79e+06"
+# [2,] "Oxy-2" "80e+06" "80e+06"
+# [3,] "Oxy-3" "78e+06" "78e+06"
+# [4,] "Oxy-4" "76e+06" "76e+06"
+# [5,] "Oxy-5" "73e+06" "73e+06"
+# [6,] "Oxy-6" "72e+06" "72e+06"
+# [7,] "Oxy-7" "87e+06" "87e+06"
+Dry_cent
+      # drychr     drycent    drychrlength
+ # [1,] "DoctH0-1" "27e+06"   "34e+06"
+ # [2,] "DoctH0-2" "8.5e+06"  "33e+06"
+ # [3,] "DoctH0-3" "23e+06"   "28e+06"
+ # [4,] "DoctH0-4" "5e+06"    "27e+06"
+ # [5,] "DoctH0-5" "2e+06"    "23e+06"
+ # [6,] "DoctH0-6" "19e+06"   "22e+06"
+ # [7,] "DoctH0-7" "17.5e+06" "22e+06"
+ # [8,] "DoctH0-8" "17e+06"   "21e+06"
+ # [9,] "DoctH0-9" "2.5e+06"  "20e+06"
+
+################################
+# Compare pericentromeric and telomeric regions
+
+win_size <- 1e6
+
+oxy_cent_tbl <- as_tibble(Oxy_cent, .name_repair = "minimal") %>%
+  transmute(chr = oxychr,
+            centromere = as.numeric(oxycent))
+
+dry_cent_tbl <- as_tibble(Dry_cent, .name_repair = "minimal") %>%
+  transmute(chr = drychr,
+            centromere = as.numeric(drycent))
+
+cent_tbl <- bind_rows(
+  oxy_cent_tbl %>% mutate(species = "Oxyria_digyna"),
+  dry_cent_tbl %>% mutate(species = "Dryas_octopetala_H0")
+)
+
+tmp <- ratios_bin_chr %>%
+  mutate(bin_start = as.numeric(bin_start),
+         bin_center = bin_start + win_size/2) %>%
+  left_join(cent_tbl, by = c("species", "chr")) %>%
+  mutate(dist_to_cent = abs(bin_center - centromere))
+
+# Label pericentric = closest half of windows within each species
+ratios_bin_chr_labeled <- tmp %>%
+  group_by(species) %>%
+  mutate(
+    k = n() %/% 2,
+    rank_by_dist = rank(dist_to_cent, ties.method = "first")
+  ) %>%
+  mutate(pericentric = if_else(rank_by_dist <= k, 1L, 0L)) %>%
+  ungroup() %>%
+  select(-centromere, -dist_to_cent, -k, -rank_by_dist)
 
 
 # Plot
-plot_species_tracks(all_tracks_2M_from_norm, "Dryas_octopetala_H0",
-  "./plots/Dryas_subset_tracks_norm01_2Mbp.png",
-  "./plots/Dryas_subset_tracks_norm01_2Mbp.pdf")
-
-plot_species_tracks(all_tracks_4M_from_norm, "Dryas_octopetala_H0",
-  "./plots/Dryas_subset_tracks_norm01_4Mbp.png",
-  "./plots/Dryas_subset_tracks_norm01_4Mbp.pdf")
-
-plot_species_tracks(all_tracks_6M_from_norm, "Dryas_octopetala_H0",
-  "./plots/Dryas_subset_tracks_norm01_6Mbp.png",
-  "./plots/Dryas_subset_tracks_norm01_6Mbp.pdf")
+ratios_bin_chr_labeled <- ratios_bin_chr_labeled %>%
+  mutate(pericentric = factor(pericentric,
+                               levels = c(0, 1),
+                               labels = c("telomeric", "pericentric")))
 
 
-# then plot Oxyria
-plot_species_tracks(all_tracks_2M_from_norm, "Oxyria_digyna",
-  "./plots/Oxyria_subset_tracks_norm01_2Mbp.png",
-  "./plots/Oxyria_subset_tracks_norm01_2Mbp.pdf")
+p <- ggplot(ratios_bin_chr_labeled,
+       aes(x = pericentric, y = ratio, fill = pericentric)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_grid(track ~ species, scales = "free_y") +
+  theme_bw() +
+  labs(x = NULL, y = "Ratio") +
+  guides(fill = "none")
 
-plot_species_tracks(all_tracks_4M_from_norm, "Oxyria_digyna",
-  "./plots/Oxyria_subset_tracks_norm01_4Mbp.png",
-  "./plots/Oxyria_subset_tracks_norm01_4Mbp.pdf")
-
-plot_species_tracks(all_tracks_6M_from_norm, "Oxyria_digyna",
-  "./plots/Oxyria_subset_tracks_norm01_6Mbp.png",
-  "./plots/Oxyria_subset_tracks_norm01_6Mbp.pdf")
+ggsave(
+  filename = "ratio_boxplot_pericentric_telomeric.png",
+  plot = p,
+  width = 6, height = 12, dpi = 300
+)
 
 #####################################
-# Need to join Oxyria chromosome names 
+# Look at 2 and 4 Mbp windows
 
-# Adjust normalized counts properly for window sizes
+library(dplyr)
+
+make_window_ratios <- function(df, window_bp = 2e6) {
+  # df: ratios_bin_chr-like with columns:
+  # species, chr, bin_start, track, count, total_gene_density
+
+  window_start_bp <- floor(df$bin_start / window_bp) * window_bp
+
+  df <- df %>%
+    mutate(bin_start_win = window_start_bp)
+
+  # Denominator: gene density per window (same for all tracks, so take one copy per window)
+  denom <- df %>%
+    select(species, chr, bin_start_win, total_gene_density) %>%
+    distinct() %>%
+    group_by(species, chr, bin_start_win) %>%
+    summarise(gene_density_win = sum(total_gene_density), .groups = "drop")
+
+  # Numerator: sum each track's counts within the window
+  num <- df %>%
+    group_by(species, chr, bin_start_win, track) %>%
+    summarise(count_win = sum(count), .groups = "drop")
+
+  out <- num %>%
+    left_join(denom, by = c("species", "chr", "bin_start_win")) %>%
+    mutate(ratio = count_win / gene_density_win,
+           ratio_plot = ratio) %>%   # placeholder; normalize later if you want
+    select(species, chr, bin_start = bin_start_win, track, ratio, count = count_win,
+           total_gene_density = gene_density_win, ratio_plot)
+
+  out
+}
+
+ratios_2Mb <- make_window_ratios(ratios_bin_chr, 2e6)
+ratios_4Mb <- make_window_ratios(ratios_bin_chr, 4e6)
+ratios_6Mb <- make_window_ratios(ratios_bin_chr, 6e6)
 
 
-# Need to divide gene class counts by total gene counts in each window
+scale_0_1_per_chr_track <- function(df) {
+  df %>%
+    group_by(chr, track) %>%
+    mutate(ratio_plot = (ratio - min(ratio, na.rm = TRUE)) /
+                         (max(ratio, na.rm = TRUE) - min(ratio, na.rm = TRUE))) %>%
+    ungroup() %>%
+    mutate(ratio_plot = ifelse(is.nan(ratio_plot), 0, ratio_plot))
+}
+
+ratios_2Mb <- scale_0_1_per_chr_track(ratios_2Mb)
+ratios_4Mb <- scale_0_1_per_chr_track(ratios_4Mb)
+ratios_6Mb <- scale_0_1_per_chr_track(ratios_6Mb)
+
+
+#-------------------------------------
+# Look at boxplots of different window sizes
+
+# one third closest to centromere = pericentric
+label_pericentric <- function(ratios_df, cent_tbl, win_size) {
+  ratios_df %>%
+    mutate(
+      bin_start = as.numeric(bin_start),
+      bin_center = bin_start + win_size / 2
+    ) %>%
+    left_join(cent_tbl, by = c("species", "chr")) %>%
+    mutate(dist_to_cent = abs(bin_center - centromere)) %>%
+    group_by(species) %>%
+    mutate(
+      k = n() %/% 2,
+      #k = floor(4 * n() / 5),  # closest 3/4 are pericentric
+      rank_by_dist = rank(dist_to_cent, ties.method = "first"),
+      pericentric = if_else(rank_by_dist <= k, 1L, 0L)
+    ) %>%
+    ungroup() %>%
+    select(-centromere, -dist_to_cent, -k, -rank_by_dist) %>%
+    mutate(
+      pericentric = factor(pericentric,
+                            levels = c(0, 1),
+                            labels = c("telomeric", "pericentric"))
+    )
+}
+
+
+oxy_cent_tbl <- as_tibble(Oxy_cent, .name_repair = "minimal") %>%
+  transmute(chr = oxychr,
+            centromere = as.numeric(oxycent))
+
+dry_cent_tbl <- as_tibble(Dry_cent, .name_repair = "minimal") %>%
+  transmute(chr = drychr,
+            centromere = as.numeric(drycent))
+
+cent_tbl <- bind_rows(
+  oxy_cent_tbl %>% mutate(species = "Oxyria_digyna"),
+  dry_cent_tbl %>% mutate(species = "Dryas_octopetala_H0")
+)
+
+
+#----------------------
+win_size <- 2e6
+
+ratios_2Mb_labeled <- label_pericentric(ratios_2Mb, cent_tbl, win_size)
+
+p2 <- ggplot(ratios_2Mb_labeled,
+             aes(x = pericentric, y = ratio, fill = pericentric)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_grid(track ~ species, scales = "free_y") +
+  theme_bw() +
+  labs(x = NULL, y = "Ratio") +
+  guides(fill = "none")
+
+ggsave(
+  filename = "ratio_boxplot_pericentric_telomeric_2Mb.png",
+  plot = p2,
+  width = 6, height = 12, dpi = 300
+)
+
+#--------------------
+
+win_size <- 4e6
+ratios_4Mb_labeled <- label_pericentric(ratios_4Mb, cent_tbl, win_size)
+# then make p4 and ggsave with a different filename
+
+p3 <- ggplot(ratios_4Mb_labeled,
+             aes(x = pericentric, y = ratio, fill = pericentric)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_grid(track ~ species, scales = "free_y") +
+  theme_bw() +
+  labs(x = NULL, y = "Ratio") +
+  guides(fill = "none")
+
+ggsave(
+  filename = "ratio_boxplot_pericentric_telomeric_4Mb.png",
+  plot = p3,
+  width = 6, height = 12, dpi = 300
+)
+
+#--------------------------
+win_size <- 6e6
+ratios_6Mb_labeled <- label_pericentric(ratios_6Mb, cent_tbl, win_size)
+# then make p6 and ggsave with a different filename
+
+p4 <- ggplot(ratios_6Mb_labeled,
+             aes(x = pericentric, y = ratio, fill = pericentric)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_grid(track ~ species, scales = "free_y") +
+  theme_bw() +
+  labs(x = NULL, y = "Ratio") +
+  guides(fill = "none")
+
+ggsave(
+  filename = "ratio_boxplot_pericentric_telomeric_6Mb.png",
+  plot = p4,
+  width = 6, height = 12, dpi = 300
+)
+
+############################################
+# Check significance of gene type differences
+
+df <- ratios_4Mb_labeled %>%
+  filter(!is.na(pericentric)) %>%
+  mutate(pericentric = factor(pericentric,
+                               levels = c("telomeric","pericentric")))
+
+yvar <- "ratio"   # change to "ratio_plot" if you want to test normalized values
+
+tests <- df %>%
+  group_by(species, track) %>%
+  group_modify(~{
+    tel <- .x[[yvar]][.x$pericentric == "telomeric"]
+    per <- .x[[yvar]][.x$pericentric == "pericentric"]
+
+    # need both groups
+    if(length(tel) == 0 || length(per) == 0) {
+      return(tibble(p_value = NA_real_, n_tel = length(tel), n_per = length(per)))
+    }
+
+    wt <- wilcox.test(tel, per, alternative = "two.sided")
+    tibble(p_value = wt$p.value, n_tel = length(tel), n_per = length(per))
+  }) %>%
+  ungroup() %>%
+  mutate(q_value = p.adjust(p_value, method = "BH"))
+
+
+tests %>% arrange(q_value)
+
+# A tibble: 8 × 6
+  # species             track                      p_value n_tel n_per  q_value
+  # <chr>               <chr>                        <dbl> <int> <int>    <dbl>
+# 1 Dryas_octopetala_H0 Positively selected genes 2.00e-15    32    31 1.60e-14
+# 2 Dryas_octopetala_H0 Accessory genes           1.77e-13    31    32 7.08e-13
+# 3 Dryas_octopetala_H0 Core genes                3.88e-13    31    32 1.03e-12
+# 4 Dryas_octopetala_H0 Microsynteny (Gene.1)     1.03e- 9    32    31 2.06e- 9
+# 5 Oxyria_digyna       Accessory genes           1.07e- 5    69    69 1.71e- 5
+# 6 Oxyria_digyna       Core genes                1.02e- 3    69    69 1.36e- 3
+# 7 Oxyria_digyna       Positively selected genes 2.77e- 2    69    69 3.17e- 2
+# 8 Oxyria_digyna       Microsynteny (Gene.1)     7.49e- 1    69    69 7.49e- 1
+
+
+###################################
+
+library(dplyr)
+library(coin)
+
+perm_tests <- ratios_4Mb_labeled %>%
+  filter(!is.na(pericentric)) %>%
+  group_by(species, track) %>%
+  group_modify(~{
+    # Need both groups present
+    if(length(unique(.x$pericentric)) < 2) {
+      return(tibble(p_value = NA_real_))
+    }
+
+    test <- coin::oneway_test(
+      ratio ~ pericentric,
+      data = .x,
+      distribution = coin::approximate(nresample = 10000)
+    )
+
+    tibble(p_value = as.numeric(coin::pvalue(test)))
+  }) %>%
+  ungroup() %>%
+  mutate(q_value = p.adjust(p_value, method = "BH"))
+
+
+perm_tests %>% arrange(q_value)
+
+  # species             track                     p_value q_value
+  # <chr>               <chr>                       <dbl>   <dbl>
+# 1 Dryas_octopetala_H0 Accessory genes            0       0
+# 2 Dryas_octopetala_H0 Core genes                 0       0
+# 3 Dryas_octopetala_H0 Microsynteny (Gene.1)      0       0
+# 4 Dryas_octopetala_H0 Positively selected genes  0       0
+# 5 Oxyria_digyna       Accessory genes            0       0
+# 6 Oxyria_digyna       Core genes                 0.0009  0.0012
+# 7 Oxyria_digyna       Positively selected genes  0.0185  0.0211
+# 8 Oxyria_digyna       Microsynteny (Gene.1)      0.251   0.251
+
+
+######################################
+# Plot tracks for various window sizes
+
+normalize_chr_track_0_1 <- function(dat) {
+  dat %>%
+    group_by(chr, track) %>%
+    mutate(
+      ratio_plot = (ratio - min(ratio, na.rm = TRUE)) /
+                    (max(ratio, na.rm = TRUE) - min(ratio, na.rm = TRUE))
+    ) %>%
+    ungroup() %>%
+    mutate(ratio_plot = ifelse(is.nan(ratio_plot), 0, ratio_plot))
+}
+
+
+plot_species_tracks_rationorm <- function(dat, species_name, win_size_bp,
+                                            out_png, out_pdf,
+                                            cent_tbl) {
+  dat <- dat %>% filter(species == species_name)
+  cent_sub <- cent_tbl %>% filter(species == species_name)
+
+  win_label <- paste0(win_size_bp/1e6, " Mb")
+
+  p <- ggplot(dat, aes(x = bin_start / 1e6, y = ratio_plot, color = track)) +
+    geom_vline(data = cent_sub,
+               aes(xintercept = centromere / 1e6),
+               linewidth = 0.5, alpha = 0.7, inherit.aes = FALSE) +
+    geom_line(linewidth = 0.6, alpha = 0.95) +
+    facet_wrap(~ chr, ncol = 1, scales = "fixed") +
+    labs(
+      x = paste0("Genomic position (Mb, ", win_label, " windows)"),
+      y = "Ratio Normalized 0-1",
+      title = species_name
+    ) +
+    theme_classic() +
+    theme(legend.position = "right")
+
+  ggsave(out_png, p, width = 7, height = 12, dpi = 300)
+  ggsave(out_pdf, p, width = 7, height = 12)
+}
+
+
+ratios_2Mb_plot <- normalize_chr_track_0_1(ratios_2Mb)
+ratios_4Mb_plot <- normalize_chr_track_0_1(ratios_4Mb)
+ratios_6Mb_plot <- normalize_chr_track_0_1(ratios_6Mb)
+
+
+plot_species_tracks_rationorm(
+  ratios_4Mb_plot, "Dryas_octopetala_H0", 4e6,
+  "./plots/Dryas_4Mb_tracks_ratio_norm.png",
+  "./plots/Dryas_4Mb_tracks_ratio_norm.pdf",
+  cent_tbl
+)
+
+plot_species_tracks_rationorm(
+  ratios_4Mb_plot, "Oxyria_digyna", 4e6,
+  "./plots/Oxyria_4Mb_tracks_ratio_norm.png",
+  "./plots/Oxyria_4Mb_tracks_ratio_norm.pdf",
+  cent_tbl
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################
+# Check overlap of positively selected genes and microsynteny genes
+# Not significantly different than random
+
+head(dry_genes)
+# [1] "DOCTH0_CHR100001637" "DOCTH0_CHR300002655" "DOCTH0_CHR800000320"
+# [4] "DOCTH0_CHR100008102" "DOCTH0_CHR400005265" "DOCTH0_CHR500006106"
+
+
+head(microsyn$Dryas.octopetala.Gene.1)
+# [1] "DoctH0_Chr600003875" "DoctH0_Chr600003875" "DoctH0_Chr600003912"
+# [4] "DoctH0_Chr600003912" "DoctH0_Chr600003916" "DoctH0_Chr600003916"
+
+
+norm <- function(x) {
+  x |>
+    toupper()
+}
+
+dry_n <- norm(dry_genes)
+mic_n <- norm(microsyn$Dryas.octopetala.Gene.1)
+
+ov <- unique(intersect(dry_n, mic_n))
+
+
+ov
+length(ov)
+# Overlap 788
+length(dry_n)
+# Positively selected 3668
+length(mic_n)
+# Microsynteny related 8910
+length(unique(Dry_gff$gene_id_up))
+# Total genes 39696
+
+M <- 39696
+K <- 3668
+N <- 8910
+x <- 788
+
+p_upper <- phyper(x - 1, m = K, n = M - K, k = N, lower.tail = FALSE)
+p_upper
+#  0.9320445
+# randomly distributed and overlapping
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2246,32 +3023,6 @@ print(ggplot() +
         legend.position = "none")
 )
 dev.off()
-
-
-#####################
-# plotting microsynteny regions for specific chromosomes
-
-
-
-
-
-
-
-
-
-
-
-
-######################
-# try joining with DMRs and microsynteny regions
-
-
-
-
-
-
-
-
 
 
 #############################################

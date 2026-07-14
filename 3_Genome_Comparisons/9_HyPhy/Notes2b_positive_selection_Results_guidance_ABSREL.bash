@@ -109,6 +109,7 @@ wc -l OGs_multi_species_guidance.sorted.tsv
 
 awk '{count[$2]++} END {print "2:",count[2]; print "3:",count[3]; print "4:",count[4]}' OGs_multi_species_guidance.sorted.tsv
 
+# Counts not accounting for duplicate genes in one species 
 # 2: 1983
 # 3: 1170
 # 4: 449
@@ -372,6 +373,7 @@ wc -l OG_paralogs_species_counts_sorted_guidance.tsv
 
 #---------------------------------
 
+#MAFFT
 # total 16401 OGs tested
 awk '{count[$2]++} END {for (val in count) print val, count[val]}' \
  OG_paralogs_species_counts_sorted.tsv

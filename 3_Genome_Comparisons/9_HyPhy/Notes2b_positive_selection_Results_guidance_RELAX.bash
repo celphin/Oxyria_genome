@@ -234,6 +234,26 @@ grep "MAKER_LG5_SNAP_GENE_85_258_MRNA_1" Drabaniv.ermine.results
 # Carbon-carbon lyase activity plays critical roles in metabolic 
 # pathways like glycolysis
 
+cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/orthofinder/Results_Aug18/Gene_Trees/Arctic_trees
+
+more OG0012366_tree.txt_HyPhy_relax.txt
+
+# ((((FT01Gene23781.t1:0.02456,FEHAP231105.t1:0.016882):0.036459,
+# (Oxyria_NCBI_Chr100004345{Foreground}:0.057383,
+# (RtaG0041881.1:0.018107,RnoG0013552.1:0.007086):0.02
+# 5078):0.021019):0.01198,Polavi_Chr100002344:0.164844):0.044558,
+# (((LOC9325994:0.025893,LOC17897262:0.027542):0.006746,
+# (((maker-lg5-snap-gene-85.258-mRNA-1{Foreground}:0.102749,
+# TAV2_LOCUS552:0.026482):0.02024,AALP_AA1G133300:0.023597):0.010836,
+# g4015.t1{Foreground}:0.040074)
+# :0.001826):0.114449,(((LOC126795455:0.35078,(LOC133743809:0.015015,
+# LOC133743744:0.021387):0.007143):0.03799,
+# DoctH0_Chr900003261{Foreground}:0.100593):0.009759,
+# ((LOC103952293:0.014215,LOC126619830:0.015099):0.062689
+# ,LOC18777121:0.097959):0.009769):0.061913):0.044558);
+
+
+
 #--------------------------------
 grep OG0001914 baseline_guidance_all_genes.tsv
 OXYRIA_NCBI_CHR800003891

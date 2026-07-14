@@ -128,7 +128,10 @@ sort GO_terms_4spp_split.txt | uniq -c | sort -nr > GO_terms_4spp_counts.txt
 # DNA binding / RNA binding (regulatory adaptation)
 # zinc ion binding (if transcription factors are involved)
 
+# Extract gene names 
+cut -f3 genes_GO_description_4species_filtered.tsv > gene_names_4spp.txt
 
+more gene_names_4spp.txt
 
 #########################
 # Run GO enrichment for combined all species
@@ -154,6 +157,8 @@ library(stringr)
 path="/home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology/"
 Gene_ont_file <- "Total_interproscan_output_edited3.tsv"
 gene_ont <- read.delim(paste0(path,"/", Gene_ont_file), header = TRUE, sep = "\t", na.strings = "-", colClasses = c("character", "character", "character", "character"))
+
+genes_4spp <- read.delim(paste0(path,"/gene_names_4spp.txt"), header = F, sep = "\t",)
 
 nrow(gene_ont)
 # [1] 109 116
@@ -189,6 +194,12 @@ all_genes <- all_genes %>%
            str_replace_all("[.-]", "_"))
 
 gene_ont <- gene_ont %>%
+  mutate(gene = gene %>%
+           toupper() %>%
+           str_replace_all("[.-]", "_"))
+
+colnames(genes_4spp) <- "gene"
+genes_4spp <- genes_4spp %>%
   mutate(gene = gene %>%
            toupper() %>%
            str_replace_all("[.-]", "_"))
@@ -249,10 +260,9 @@ gene_ont_Oxydig2 <- gene_ont_Oxydig %>%
 write.table(gene_ont_Oxydig2, "Oxydig_genescores_guidance", sep = "\t", quote = FALSE, col.names=TRUE, row.names = FALSE)
 
 
-##################################
+#----------------------------------
 # Remove gene families that have paralogs in Arctic species
 
-# Combined?
 single_gene_ont_Oxydig <- gene_ont_Oxydig %>%
   group_by(orthogroup) %>%
   filter(n_distinct(gene) == 1) %>%
@@ -266,6 +276,40 @@ write.table(single_gene_ont_Oxydig1, "single_Oxydig_GO_mappings_guidance.ermineJ
 single_gene_ont_Oxydig2 <- single_gene_ont_Oxydig %>%
   select(gene, corrected_p)
 write.table(single_gene_ont_Oxydig2, "single_Oxydig_genescores_guidance", sep = "\t", quote = FALSE, col.names=TRUE, row.names = FALSE)
+
+
+#--------------------------------------
+# Subset for those found in all four species
+
+genes_4spp
+# 814                                              G22546_T1
+# 815                      MAKER_LG8_SNAP_GENE_30_215_MRNA_1
+# 816                               OXYRIA_NCBI_CHR600004548
+# 817                                    DOCTH0_CHR800000090
+# 818                                              G19441_T1
+# 819                      MAKER_LG8_SNAP_GENE_22_253_MRNA_1
+# 820                               OXYRIA_NCBI_CHR400002926
+# 821                                    DOCTH0_CHR200009985
+# 822                                              G12371_T1
+
+genes_vec <- genes_4spp$gene
+
+spp4_gene_ont_Oxydig <- gene_ont_Oxydig %>%
+  filter(gene %in% genes_vec) %>%
+  ungroup()
+
+spp4_gene_ont_Oxydig1 <- gene_ont_Oxydig %>%
+  mutate(gene2 = gene) %>%
+  select(gene, gene2, descrip, GOterm)
+write.table(spp4_gene_ont_Oxydig1, "spp4_Oxydig_GO_mappings_guidance.ermineJ.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+spp4_gene_ont_Oxydig2 <- spp4_gene_ont_Oxydig %>%
+  select(gene, corrected_p)
+write.table(spp4_gene_ont_Oxydig2, "spp4_Oxydig_genescores_guidance", sep = "\t", quote = FALSE, col.names=TRUE, row.names = FALSE)
+
+
+
+
 
 
 ##############################################
@@ -289,7 +333,7 @@ tmux attach-session -t Enrichment
 
 # https://erminej.msl.ubc.ca/help/tutorials/running-an-analysis-ora/
 
-salloc -c1 --time 3:00:00 --mem 120000m --account def-rieseber
+salloc -c1 --time 2:00:00 --mem 120000m --account def-henryg
 
 cd /home/celphin/scratch/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology
 
@@ -301,23 +345,87 @@ module load StdEnv/2020 java/13.0.2
 #-------------------
 # Scores are p-values
 
-for taxon in Combined ; do $ERMINEJ_HOME/bin/ermineJ.sh \
+taxon=Oxydig
+for t in "$taxon"; do $ERMINEJ_HOME/bin/ermineJ.sh \
 -a "$taxon"_GO_mappings_guidance.ermineJ.txt \
 -s "$taxon"_genescores_guidance \
 -c /home/celphin/ermineJ.data/go.obo \
 --genesOut --logTrans -n ORA \
 -o "$taxon"_ORA_guidance.ermine.results -y 5 --mtc FDR ; done
 
+# 1 elements in your gene score file had no gene sets and were ignored.
+# Usable scores for 5888 distinct genes found (99.98%)
+# Creating a subsetted annotation set for 5888/5889 elements) ...
+# Starting ORA analysis
+# Hit list (1976 genes) enrichment for multifunctionality: P = 0.450
+# 300 gene sets analyzed ...
+# 600 gene sets analyzed ...
+# 900 gene sets analyzed ...
+# 1200 gene sets analyzed ...
+# 'Hits' are not significantly multifunctionality-biased, no multifunctionality correction needed
+# Finished with ORA computations: 1976 elements passed your threshold.
+# Multiple test correction for 1261 scored sets.
+# Multifunctionality correlation is -0.01 for 5888 values
+# Done!
 
 #------------------------
 # Run again removing any genes that are paralogs in Arctic species
-for taxon in Combined ; do $ERMINEJ_HOME/bin/ermineJ.sh \
+taxon=Oxydig
+for t in "$taxon"; do $ERMINEJ_HOME/bin/ermineJ.sh \
 -a single_"$taxon"_GO_mappings_guidance.ermineJ.txt \
 -s single_"$taxon"_genescores_guidance \
 -c /home/celphin/ermineJ.data/go.obo \
 --genesOut --logTrans -n ORA \
 -o single_"$taxon"_ORA_guidance.ermine.results -y 5 --mtc FDR ; done
 
+# Warning: There were attempts to take the log of non-positive values. These are set to 1.0E-15
+# 1 elements in your gene score file had no gene sets and were ignored.
+# Usable scores for 2541 distinct genes found (99.96%)
+# Creating a subsetted annotation set for 2541/2542 elements) ...
+# Starting ORA analysis
+# Hit list (988 genes) enrichment for multifunctionality: P = 0.263
+# 300 gene sets analyzed ...
+# 600 gene sets analyzed ...
+# 'Hits' are not significantly multifunctionality-biased, no multifunctionality correction needed
+# Finished with ORA computations: 988 elements passed your threshold.
+# Multiple test correction for 741 scored sets.
+# Multifunctionality correlation is 0.01 for 2541 values
+# Done!
+
+#------------------------
+# Run again keeping only genes found in all four Arctic species
+taxon=Oxydig
+for t in "$taxon"; do
+  "$ERMINEJ_HOME"/bin/ermineJ.sh \
+    -a "spp4_${t}_GO_mappings_guidance.ermineJ.txt" \
+    -s "spp4_${t}_genescores_guidance" \
+    -c /home/celphin/ermineJ.data/go.obo \
+    --genesOut --logTrans -n ORA \
+    -o "spp4_${t}_ORA_guidance.ermine.results" \
+    -y 5 --mtc FDR
+done
+
+# Done with initialization.
+# Starting analysis ...
+# Reading scores from /lustre07/scratch/celphin/Oxyria_Positive_Selection_Test/Total_genomes/Gene_ontology/spp4_Oxydig_genescores_guidance
+# Reading gene scores from column 2 ...
+# Warning: There were attempts to take the log of non-positive values. These are set to 1.0E-15
+# Usable scores for only 173 distinct genes found (2.94%)
+# Creating a subsetted annotation set for 173/5889 elements) ...
+# Pruning: 360/624 sets removed: obsolete (0), too small (360) or too big (0) terms pruned. ...
+# Starting ORA analysis
+# Hit list (135 genes) enrichment for multifunctionality: P = 0.160
+# 'Hits' are not significantly multifunctionality-biased, no multifunctionality correction needed
+# Finished with ORA computations: 135 elements passed your threshold.
+# Multiple test correction for 111 scored sets.
+# Multifunctionality correlation is 0.17 for 173 values
+# Done!
+
+
+more Oxydig_ORA_guidance.ermine.results
+more spp4_Oxydig_ORA_guidance.ermine.results
+
+# none significant  - likely because small set of genes
 
 ###########################################
 # Explore data
