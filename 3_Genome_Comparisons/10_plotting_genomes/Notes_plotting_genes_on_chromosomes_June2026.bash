@@ -1784,7 +1784,7 @@ plot_species_tracks_ratio(
 oxychr <- c("Oxy-1", "Oxy-2", "Oxy-3", "Oxy-4",  
  "Oxy-5", "Oxy-6", "Oxy-7")
 oxycent <- c("46e+06", "31e+06", "45e+06", "47e+06",  
- "45e+06", "30e+06", "31e+06")
+ "45e+06", "28e+06", "31e+06")
 oxychrlength <- c("79e+06", "80e+06", "78e+06", "76e+06",  
  "73e+06", "72e+06", "87e+06")
 Oxy_cent <- cbind(oxychr, oxycent, oxychrlength)
@@ -1878,8 +1878,6 @@ ggsave(
 
 #####################################
 # Look at 2 and 4 Mbp windows
-
-library(dplyr)
 
 make_window_ratios <- function(df, window_bp = 2e6) {
   # df: ratios_bin_chr-like with columns:
@@ -1980,6 +1978,25 @@ win_size <- 2e6
 ratios_2Mb_labeled <- label_pericentric(ratios_2Mb, cent_tbl, win_size)
 
 p2 <- ggplot(ratios_2Mb_labeled,
+             aes(x = pericentric, y = ratio_plot, fill = pericentric)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_grid(track ~ species, scales = "free_y") +
+  theme_bw() +
+  labs(x = NULL, y = "Ratio") +
+  guides(fill = "none")
+
+ggsave(
+  filename = "rationorm_boxplot_pericentric_telomeric_2Mb.png",
+  plot = p2,
+  width = 6, height = 12, dpi = 300
+)
+
+#--------------------
+win_size <- 2e6
+
+ratios_2Mb_labeled <- label_pericentric(ratios_2Mb, cent_tbl, win_size)
+
+p2 <- ggplot(ratios_2Mb_labeled,
              aes(x = pericentric, y = ratio, fill = pericentric)) +
   geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
   facet_grid(track ~ species, scales = "free_y") +
@@ -1994,13 +2011,12 @@ ggsave(
 )
 
 #--------------------
-
 win_size <- 4e6
 ratios_4Mb_labeled <- label_pericentric(ratios_4Mb, cent_tbl, win_size)
 # then make p4 and ggsave with a different filename
 
 p3 <- ggplot(ratios_4Mb_labeled,
-             aes(x = pericentric, y = ratio, fill = pericentric)) +
+             aes(x = pericentric, y = ratio_plot, fill = pericentric)) +
   geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
   facet_grid(track ~ species, scales = "free_y") +
   theme_bw() +
@@ -2008,9 +2024,15 @@ p3 <- ggplot(ratios_4Mb_labeled,
   guides(fill = "none")
 
 ggsave(
-  filename = "ratio_boxplot_pericentric_telomeric_4Mb.png",
+  filename = "rationorm_boxplot_pericentric_telomeric_4Mb.png",
   plot = p3,
   width = 6, height = 12, dpi = 300
+)
+
+ggsave(
+  filename = "rationorm_boxplot_pericentric_telomeric_4Mb.pdf",
+  plot = p3,
+  width = 6, height = 12
 )
 
 #--------------------------
@@ -2019,7 +2041,7 @@ ratios_6Mb_labeled <- label_pericentric(ratios_6Mb, cent_tbl, win_size)
 # then make p6 and ggsave with a different filename
 
 p4 <- ggplot(ratios_6Mb_labeled,
-             aes(x = pericentric, y = ratio, fill = pericentric)) +
+             aes(x = pericentric, y = ratio_plot, fill = pericentric)) +
   geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
   facet_grid(track ~ species, scales = "free_y") +
   theme_bw() +
@@ -2062,17 +2084,17 @@ tests <- df %>%
 
 tests %>% arrange(q_value)
 
-# A tibble: 8 × 6
+# # A tibble: 8 × 6
   # species             track                      p_value n_tel n_per  q_value
   # <chr>               <chr>                        <dbl> <int> <int>    <dbl>
 # 1 Dryas_octopetala_H0 Positively selected genes 2.00e-15    32    31 1.60e-14
 # 2 Dryas_octopetala_H0 Accessory genes           1.77e-13    31    32 7.08e-13
 # 3 Dryas_octopetala_H0 Core genes                3.88e-13    31    32 1.03e-12
 # 4 Dryas_octopetala_H0 Microsynteny (Gene.1)     1.03e- 9    32    31 2.06e- 9
-# 5 Oxyria_digyna       Accessory genes           1.07e- 5    69    69 1.71e- 5
-# 6 Oxyria_digyna       Core genes                1.02e- 3    69    69 1.36e- 3
-# 7 Oxyria_digyna       Positively selected genes 2.77e- 2    69    69 3.17e- 2
-# 8 Oxyria_digyna       Microsynteny (Gene.1)     7.49e- 1    69    69 7.49e- 1
+# 5 Oxyria_digyna       Accessory genes           5.32e- 5    69    69 8.51e- 5
+# 6 Oxyria_digyna       Core genes                2.03e- 4    69    69 2.71e- 4
+# 7 Oxyria_digyna       Positively selected genes 1.05e- 2    69    69 1.20e- 2
+# 8 Oxyria_digyna       Microsynteny (Gene.1)     4.72e- 1    69    69 4.72e- 1
 
 
 ###################################
@@ -2103,17 +2125,17 @@ perm_tests <- ratios_4Mb_labeled %>%
 
 perm_tests %>% arrange(q_value)
 
-  # species             track                     p_value q_value
-  # <chr>               <chr>                       <dbl>   <dbl>
-# 1 Dryas_octopetala_H0 Accessory genes            0       0
-# 2 Dryas_octopetala_H0 Core genes                 0       0
-# 3 Dryas_octopetala_H0 Microsynteny (Gene.1)      0       0
-# 4 Dryas_octopetala_H0 Positively selected genes  0       0
-# 5 Oxyria_digyna       Accessory genes            0       0
-# 6 Oxyria_digyna       Core genes                 0.0009  0.0012
-# 7 Oxyria_digyna       Positively selected genes  0.0185  0.0211
-# 8 Oxyria_digyna       Microsynteny (Gene.1)      0.251   0.251
-
+# A tibble: 8 × 4
+  # species             track                     p_value  q_value
+  # <chr>               <chr>                       <dbl>    <dbl>
+# 1 Dryas_octopetala_H0 Accessory genes            0      0
+# 2 Dryas_octopetala_H0 Core genes                 0      0
+# 3 Dryas_octopetala_H0 Microsynteny (Gene.1)      0      0
+# 4 Dryas_octopetala_H0 Positively selected genes  0      0
+# 5 Oxyria_digyna       Accessory genes            0.0001 0.000133
+# 6 Oxyria_digyna       Core genes                 0.0001 0.000133
+# 7 Oxyria_digyna       Positively selected genes  0.0088 0.0101
+# 8 Oxyria_digyna       Microsynteny (Gene.1)      0.156  0.156
 
 ######################################
 # Plot tracks for various window sizes
@@ -2163,11 +2185,26 @@ ratios_6Mb_plot <- normalize_chr_track_0_1(ratios_6Mb)
 
 
 plot_species_tracks_rationorm(
-  ratios_4Mb_plot, "Dryas_octopetala_H0", 4e6,
-  "./plots/Dryas_4Mb_tracks_ratio_norm.png",
-  "./plots/Dryas_4Mb_tracks_ratio_norm.pdf",
+  ratios_2Mb_plot, "Dryas_octopetala_H0", 2e6,
+  "./plots/Dryas_2Mb_tracks_ratio_norm.png",
+  "./plots/Dryas_2Mb_tracks_ratio_norm.pdf",
   cent_tbl
 )
+
+# plot_species_tracks_rationorm(
+  # ratios_2Mb_plot, "Oxyria_digyna", 2e6,
+  # "./plots/Oxyria_2Mb_tracks_ratio_norm.png",
+  # "./plots/Oxyria_2Mb_tracks_ratio_norm.pdf",
+  # cent_tbl
+# )
+
+#----
+# plot_species_tracks_rationorm(
+  # ratios_4Mb_plot, "Dryas_octopetala_H0", 4e6,
+  # "./plots/Dryas_4Mb_tracks_ratio_norm.png",
+  # "./plots/Dryas_4Mb_tracks_ratio_norm.pdf",
+  # cent_tbl
+# )
 
 plot_species_tracks_rationorm(
   ratios_4Mb_plot, "Oxyria_digyna", 4e6,
@@ -2176,7 +2213,20 @@ plot_species_tracks_rationorm(
   cent_tbl
 )
 
+# #----
+# plot_species_tracks_rationorm(
+  # ratios_6Mb_plot, "Dryas_octopetala_H0", 6e6,
+  # "./plots/Dryas_6Mb_tracks_ratio_norm.png",
+  # "./plots/Dryas_6Mb_tracks_ratio_norm.pdf",
+  # cent_tbl
+# )
 
+# plot_species_tracks_rationorm(
+  # ratios_6Mb_plot, "Oxyria_digyna", 6e6,
+  # "./plots/Oxyria_6Mb_tracks_ratio_norm.png",
+  # "./plots/Oxyria_6Mb_tracks_ratio_norm.pdf",
+  # cent_tbl
+# )
 
 
 
@@ -2241,6 +2291,9 @@ p_upper
 #  0.9320445
 # randomly distributed and overlapping
 
+
+#-------------------------
+# What about the positively selected genes in all Arctic species
 
 
 
